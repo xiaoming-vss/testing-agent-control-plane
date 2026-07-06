@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv
+
+# Local tooling and editor files
+.idea/
+.tmp/
+.agents/
+.codex/
+
+# Local configuration with secrets/credentials
+config/local.toml
+
+# Runtime uploaded/generated data
+storage/requirements/
+storage/skills/*
+!storage/skills/.gitkeep
+
+# Agent planning artifacts
+docs/superpowers/
