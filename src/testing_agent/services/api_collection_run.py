@@ -18,7 +18,7 @@ from testing_agent.models.sprint import Sprint
 from testing_agent.models.worker_task import WorkerTask
 from testing_agent.repositories.api_collection_run import ApiCollectionRunRepository
 from testing_agent.schemas.api_run import ApiCollectionRunResponse, RunApiCollectionRequest
-from testing_agent.services.common import dump
+from testing_agent.services.common import dump, list_payload
 
 
 class ApiCollectionRunContext:
@@ -147,10 +147,10 @@ class ApiCollectionRunService:
         await self.repository.refresh(run)
         return dump_run(run)
 
-    async def list(self, user_id: str, collection_id: str) -> list[dict]:
+    async def list(self, user_id: str, collection_id: str) -> dict[str, Any]:
         await self.get_owned_context(user_id, collection_id)
         rows = await self.repository.list_runs(collection_id)
-        return [dump_run(row) for row in rows]
+        return list_payload([dump_run(row) for row in rows])
 
     async def get(self, user_id: str, collection_run_id: str) -> dict:
         return dump_run(await self.ensure_owned_run(user_id, collection_run_id))

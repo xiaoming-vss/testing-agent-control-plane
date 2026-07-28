@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from testing_agent.models.ai_generate_task import AiGenerateTask, ApiCaseGenerateTaskRun
 from testing_agent.models.api_case import ApiCase
 from testing_agent.models.api_collection import ApiCollection
+from testing_agent.models.function_test_case import FunctionTestCase
+from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.models.project import Project
 from testing_agent.models.requirement import Requirement
 from testing_agent.models.sprint import Sprint
@@ -75,6 +77,35 @@ class AiGenerateTaskRepository:
             ).all()
         )
 
+    async def get_active_task_by_project_sprint_type(
+        self, project_id: str, sprint_id: str, task_type: str
+    ) -> AiGenerateTask | None:
+        return await self.session.scalar(
+            select(AiGenerateTask).where(
+                AiGenerateTask.project_id == project_id,
+                AiGenerateTask.sprint_id == sprint_id,
+                AiGenerateTask.task_type == task_type,
+                AiGenerateTask.deleted_at.is_(None),
+            )
+        )
+    async def list_runs_by_project_sprint_task_type(
+        self, project_id: str, sprint_id: str, task_type: str
+    ) -> list[ApiCaseGenerateTaskRun]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(ApiCaseGenerateTaskRun)
+                    .join(AiGenerateTask, AiGenerateTask.task_id == ApiCaseGenerateTaskRun.task_id)
+                    .where(
+                        ApiCaseGenerateTaskRun.project_id == project_id,
+                        ApiCaseGenerateTaskRun.sprint_id == sprint_id,
+                        AiGenerateTask.task_type == task_type,
+                        AiGenerateTask.deleted_at.is_(None),
+                    )
+                    .order_by(ApiCaseGenerateTaskRun.created_at.desc())
+                )
+            ).all()
+        )
     async def get_run(self, run_id: str) -> ApiCaseGenerateTaskRun | None:
         return await self.session.scalar(
             select(ApiCaseGenerateTaskRun).where(ApiCaseGenerateTaskRun.run_id == run_id)
@@ -98,6 +129,37 @@ class AiGenerateTaskRepository:
             .order_by(WorkerTask.created_at.desc(), WorkerTask.id.desc())
         )
 
+    async def get_function_suite_by_requirement_and_name(
+        self, requirement_id: str, name: str
+    ) -> FunctionTestSuite | None:
+        return await self.session.scalar(
+            select(FunctionTestSuite).where(
+                FunctionTestSuite.requirement_id == requirement_id,
+                FunctionTestSuite.name == name,
+                FunctionTestSuite.deleted_at.is_(None),
+            )
+        )
+
+    async def get_function_case_by_suite_and_title(
+        self, suite_id: str, title: str
+    ) -> FunctionTestCase | None:
+        return await self.session.scalar(
+            select(FunctionTestCase).where(
+                FunctionTestCase.suite_id == suite_id,
+                FunctionTestCase.title == title,
+                FunctionTestCase.deleted_at.is_(None),
+            )
+        )
+
+    async def max_function_case_order_by_suite(self, suite_id: str) -> int:
+        value = await self.session.scalar(
+            select(func.max(FunctionTestCase.order_no)).where(
+                FunctionTestCase.suite_id == suite_id,
+                FunctionTestCase.deleted_at.is_(None),
+            )
+        )
+        return int(value or 0)
+
     def add(self, row: object) -> None:
         self.session.add(row)
 
@@ -109,3 +171,6 @@ class AiGenerateTaskRepository:
 
     async def refresh(self, row: object) -> None:
         await self.session.refresh(row)
+
+
+

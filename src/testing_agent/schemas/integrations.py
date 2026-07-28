@@ -66,5 +66,6 @@ class RemoteResourceListResponse(BaseModel):
     remote_project_id: str | None = Field(default=None, alias="remoteProjectId")
     remote_execution_id: str | None = Field(default=None, alias="remoteExecutionId")
     items: list[Any]
+    total: int = 0
 
     model_config = ConfigDict(populate_by_name=True)

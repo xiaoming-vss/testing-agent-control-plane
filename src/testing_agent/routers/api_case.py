@@ -10,7 +10,7 @@ from testing_agent.handlers.api_case import (
     update_api_case,
 )
 from testing_agent.schemas.api_case import ApiCaseResponse
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ router.post(
 )(create_api_case)
 router.get(
     "/api-collections/{collection_id}/cases",
-    response_model=ApiResponse[list[ApiCaseResponse]],
+    response_model=ApiResponse[ListResponse[ApiCaseResponse]],
 )(list_api_cases)
 router.get("/api-cases/{case_id}", response_model=ApiResponse[ApiCaseResponse])(
     get_api_case

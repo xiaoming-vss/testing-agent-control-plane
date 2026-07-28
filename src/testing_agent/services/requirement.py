@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from testing_agent.core.errors import ErrNotFound, ErrRequirementNameAlreadyUse
 from testing_agent.core.sid import new_id
@@ -15,6 +16,7 @@ from testing_agent.schemas.requirement import (
     UpdateRequirementRequest,
     normalize_document_type,
 )
+from testing_agent.services.common import list_payload
 from testing_agent.services.sprint import SprintService
 
 
@@ -110,10 +112,10 @@ class RequirementService:
         await self.requirements.refresh(requirement)
         return dump_requirement(requirement)
 
-    async def list(self, user_id: str, sprint_id: str) -> list[dict]:
+    async def list(self, user_id: str, sprint_id: str) -> dict[str, Any]:
         await self.sprints.get_owned_entity(user_id, sprint_id)
         rows = await self.requirements.list_active_by_sprint(sprint_id)
-        return [dump_requirement(row) for row in rows]
+        return list_payload([dump_requirement(row) for row in rows])
 
     async def get(self, user_id: str, requirement_id: str) -> dict:
         return dump_requirement(await self.get_owned_entity(user_id, requirement_id))

@@ -23,6 +23,38 @@ class BugMetricGroup(BaseModel):
     suggestion: int = 0
 
 
+class ProjectMetricContext(BaseModel):
+    project_name: str = Field(default="", alias="projectName")
+    description: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SprintMetricContext(BaseModel):
+    sprint_name: str = Field(default="", alias="sprintName")
+    start_date: str = Field(default="", alias="startDate")
+    end_date: str = Field(default="", alias="endDate")
+    description: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RequirementMetricContext(BaseModel):
+    requirement_name: str = Field(default="", alias="requirementName")
+    description: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class BugDetailContext(BaseModel):
+    title: str = ""
+    module: str = ""
+    severity: str = ""
+    status: str = ""
+    owner: str = ""
+    description: str = ""
+
+
 class SprintDailyMetricRequest(BaseModel):
     function_case_total: int | None = Field(default=None, alias="functionCaseTotal")
     function_case_executed: int | None = Field(default=None, alias="functionCaseExecuted")
@@ -58,6 +90,10 @@ class SprintDailyMetricResponse(BaseModel):
     api: TestMetricGroup
     ui: TestMetricGroup
     bug: BugMetricGroup
+    project: ProjectMetricContext = Field(default_factory=ProjectMetricContext)
+    sprint: SprintMetricContext = Field(default_factory=SprintMetricContext)
+    requirements: list[RequirementMetricContext] = Field(default_factory=list)
+    bugs: list[BugDetailContext] = Field(default_factory=list)
     created_at: datetime | str | None = Field(default="", alias="createdAt")
     updated_at: datetime | str | None = Field(default="", alias="updatedAt")
 

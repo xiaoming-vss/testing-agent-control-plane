@@ -16,6 +16,12 @@ def test_v1_routes_are_grouped_in_openapi():
     assert tags_for("/v1/function-case-generate-tasks/{taskId}", "get") == [
         "Function AI Tasks"
     ]
+    assert tags_for("/v1/test-report-generate-runs/{runId}", "get") == [
+        "Test Report AI Tasks"
+    ]
+    assert tags_for("/v1/test-report-generate-runs/{runId}/pdf", "get") == [
+        "Test Report AI Tasks"
+    ]
     assert tags_for("/v1/api-case-runs/{runId}", "get") == ["API Runs"]
     assert tags_for("/v1/ui-test-case-runs/{runId}", "get") == ["UI Runs"]
     assert tags_for("/v1/integrations/zentao/connections", "get") == [
@@ -86,7 +92,11 @@ def test_core_success_response_data_uses_declared_models():
     list_data_schema = resolve_ref(project_list_schema)["properties"]["data"]
     detail_data_schema = resolve_ref(project_detail_schema)["properties"]["data"]
 
-    assert list_data_schema["items"] == {"$ref": "#/components/schemas/ProjectResponse"}
+    list_data_schema = resolve_ref(list_data_schema)
+    assert list_data_schema["properties"]["total"]["type"] == "integer"
+    assert list_data_schema["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/ProjectResponse"
+    }
     assert detail_data_schema == {"$ref": "#/components/schemas/ProjectResponse"}
 
 
@@ -142,3 +152,5 @@ def test_requirement_requests_do_not_expose_description_or_status():
     assert "status" not in create_properties
     assert "description" not in update_properties
     assert "status" not in update_properties
+
+

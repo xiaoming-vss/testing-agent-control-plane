@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class ResourceBindingRequest(BaseModel):
     provider: str = "zentao"
     connection_id: str = Field(alias="connectionId")
-    remote_resource_type: str = Field(alias="remoteResourceType")
+    remote_resource_type: str = Field(default="", alias="remoteResourceType")
     remote_resource_id: str = Field(alias="remoteResourceId")
     remote_parent_id: str = Field(default="", alias="remoteParentId")
     remote_name_snapshot: str = Field(default="", alias="remoteNameSnapshot")

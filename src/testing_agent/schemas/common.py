@@ -13,6 +13,11 @@ class ApiResponse[DataT](BaseModel):
     data: DataT
 
 
+class ListResponse[DataT](BaseModel):
+    total: int = 0
+    items: list[DataT]
+
+
 class EmptyData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

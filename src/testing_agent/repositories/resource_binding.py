@@ -31,6 +31,44 @@ class ResourceBindingRepository:
             )
         )
 
+    async def get_active_by_local_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> ResourceBinding | None:
+        return await self.session.scalar(
+            select(ResourceBinding)
+            .where(
+                ResourceBinding.local_resource_type == resource_type,
+                ResourceBinding.local_resource_id == resource_id,
+                ResourceBinding.status == "active",
+                ResourceBinding.deleted_at.is_(None),
+            )
+            .order_by(ResourceBinding.id.asc())
+            .limit(1)
+        )
+
+    async def exists_active_by_remote_resource(
+        self,
+        provider: str,
+        connection_id: str,
+        remote_resource_type: str,
+        remote_resource_id: str,
+    ) -> bool:
+        row = await self.session.scalar(
+            select(ResourceBinding.binding_id)
+            .where(
+                ResourceBinding.provider == provider,
+                ResourceBinding.connection_id == connection_id,
+                ResourceBinding.remote_resource_type == remote_resource_type,
+                ResourceBinding.remote_resource_id == remote_resource_id,
+                ResourceBinding.status == "active",
+                ResourceBinding.deleted_at.is_(None),
+            )
+            .limit(1)
+        )
+        return row is not None
+
     async def list(
         self, user_id: str, resource_type: str, resource_id: str
     ) -> list[ResourceBinding]:

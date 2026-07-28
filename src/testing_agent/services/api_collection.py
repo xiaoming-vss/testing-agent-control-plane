@@ -20,7 +20,7 @@ from testing_agent.models.api_collection import ApiCollection
 from testing_agent.models.api_extract_rule import ApiExtractRule
 from testing_agent.repositories.api_collection import ApiCollectionRepository
 from testing_agent.schemas.api_collection import ApiCollectionRequest, ApiCollectionResponse
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 ALLOWED_IMPORT_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH"}
 ALLOWED_IMPORT_BODY_TYPES = {"json", "form", "raw", "none"}
@@ -373,10 +373,10 @@ class ApiCollectionService:
         await self.repository.refresh(collection)
         return dump(ApiCollectionResponse, collection)
 
-    async def list(self, user_id: str, requirement_id: str) -> list[dict]:
+    async def list(self, user_id: str, requirement_id: str) -> dict[str, Any]:
         await self.ensure_requirement_owner(user_id, requirement_id)
         rows = await self.repository.list_by_requirement(requirement_id)
-        return [dump(ApiCollectionResponse, row) for row in rows]
+        return list_payload([dump(ApiCollectionResponse, row) for row in rows])
 
     async def get(self, user_id: str, collection_id: str) -> dict:
         return dump(ApiCollectionResponse, await self.get_owned_entity(user_id, collection_id))

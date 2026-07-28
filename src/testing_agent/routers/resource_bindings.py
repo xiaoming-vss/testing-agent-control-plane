@@ -13,7 +13,7 @@ from testing_agent.handlers.resource_binding import (
     unbind_requirement,
     unbind_sprint,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.resource_binding import ResourceBindingResponse
 
 router = APIRouter()
@@ -24,7 +24,7 @@ router.post(
 )(bind_project)
 router.get(
     "/projects/{project_id}/bindings",
-    response_model=ApiResponse[list[ResourceBindingResponse]],
+    response_model=ApiResponse[ListResponse[ResourceBindingResponse]],
 )(list_project_bindings)
 router.delete(
     "/projects/{project_id}/bindings/{binding_id}",
@@ -36,7 +36,7 @@ router.post(
 )(bind_sprint)
 router.get(
     "/sprints/{sprint_id}/bindings",
-    response_model=ApiResponse[list[ResourceBindingResponse]],
+    response_model=ApiResponse[ListResponse[ResourceBindingResponse]],
 )(list_sprint_bindings)
 router.delete(
     "/sprints/{sprint_id}/bindings/{binding_id}",
@@ -48,7 +48,7 @@ router.post(
 )(bind_requirement)
 router.get(
     "/requirements/{requirement_id}/bindings",
-    response_model=ApiResponse[list[ResourceBindingResponse]],
+    response_model=ApiResponse[ListResponse[ResourceBindingResponse]],
 )(list_requirement_bindings)
 router.delete(
     "/requirements/{requirement_id}/bindings/{binding_id}",

@@ -46,7 +46,7 @@ from testing_agent.schemas.api_collection import (
 from testing_agent.schemas.api_environment import ApiEnvironmentResponse
 from testing_agent.schemas.api_environment_var import ApiEnvironmentVarResponse
 from testing_agent.schemas.api_extract_rule import ApiExtractRuleResponse
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 
 router = APIRouter()
 
@@ -56,7 +56,7 @@ router.post(
 )(create_api_collection)
 router.get(
     "/requirements/{requirement_id}/api-collections",
-    response_model=ApiResponse[list[ApiCollectionResponse]],
+    response_model=ApiResponse[ListResponse[ApiCollectionResponse]],
 )(list_api_collections)
 router.get(
     "/api-collections/{collection_id}",
@@ -80,7 +80,7 @@ router.post(
 )(create_api_assert_rule)
 router.get(
     "/api-cases/{case_id}/assert-rules",
-    response_model=ApiResponse[list[ApiAssertRuleResponse]],
+    response_model=ApiResponse[ListResponse[ApiAssertRuleResponse]],
 )(list_api_assert_rules)
 router.get(
     "/api-assert-rules/{assert_rule_id}",
@@ -100,7 +100,7 @@ router.post(
 )(create_api_extract_rule)
 router.get(
     "/api-cases/{case_id}/extract-rules",
-    response_model=ApiResponse[list[ApiExtractRuleResponse]],
+    response_model=ApiResponse[ListResponse[ApiExtractRuleResponse]],
 )(list_api_extract_rules)
 router.get(
     "/api-extract-rules/{extract_rule_id}",
@@ -120,7 +120,7 @@ router.post(
 )(create_api_environment)
 router.get(
     "/projects/{project_id}/api-environments",
-    response_model=ApiResponse[list[ApiEnvironmentResponse]],
+    response_model=ApiResponse[ListResponse[ApiEnvironmentResponse]],
 )(list_api_environments)
 router.get(
     "/api-environments/{environment_id}",
@@ -140,7 +140,7 @@ router.post(
 )(create_api_environment_var)
 router.get(
     "/api-environments/{environment_id}/vars",
-    response_model=ApiResponse[list[ApiEnvironmentVarResponse]],
+    response_model=ApiResponse[ListResponse[ApiEnvironmentVarResponse]],
 )(list_api_environment_vars)
 router.get(
     "/api-environment-vars/{env_var_id}",

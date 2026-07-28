@@ -8,7 +8,7 @@ from testing_agent.core.sid import new_id
 from testing_agent.models.api_environment import ApiEnvironment
 from testing_agent.repositories.api_environment import ApiEnvironmentRepository
 from testing_agent.schemas.api_environment import ApiEnvironmentRequest, ApiEnvironmentResponse
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 
 class ApiEnvironmentService:
@@ -41,10 +41,10 @@ class ApiEnvironmentService:
         await self.repository.refresh(environment)
         return dump(ApiEnvironmentResponse, environment)
 
-    async def list(self, user_id: str, project_id: str) -> list[dict]:
+    async def list(self, user_id: str, project_id: str) -> dict[str, Any]:
         await self.ensure_project_owner(user_id, project_id)
         rows = await self.repository.list_by_project(project_id)
-        return [dump(ApiEnvironmentResponse, row) for row in rows]
+        return list_payload([dump(ApiEnvironmentResponse, row) for row in rows])
 
     async def get(self, user_id: str, environment_id: str) -> dict:
         return dump(ApiEnvironmentResponse, await self.get_owned_entity(user_id, environment_id))

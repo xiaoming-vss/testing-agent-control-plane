@@ -5,7 +5,13 @@ from fastapi.testclient import TestClient
 
 from testing_agent.api.deps import get_ai_generate_task_service, get_current_user_id
 from testing_agent.app import create_app
-from testing_agent.core.errors import ErrApiCollectionImportInvalid, ErrBadRequest
+from testing_agent.core.errors import (
+    ErrApiCollectionImportInvalid,
+    ErrBadRequest,
+    ErrRemoteResourceAlreadyBound,
+    ErrResourceBindingAlreadyExists,
+    ErrZentaoRemoteResourceUnavailable,
+)
 from testing_agent.models.api_assert_rule import ApiAssertRule
 from testing_agent.models.api_case import ApiCase
 from testing_agent.models.api_extract_rule import ApiExtractRule
@@ -21,6 +27,8 @@ from testing_agent.services.api_case import ApiCaseService
 from testing_agent.services.api_collection_run import ApiCollectionRunService
 from testing_agent.services.api_request_render import render_api_case_request
 from testing_agent.services.integration_connection import IntegrationConnectionService
+from testing_agent.services.resource_binding import ResourceBindingService
+from testing_agent.services.zentao_auth import ZentaoAuthProvider
 
 
 class FakeUpload:
@@ -30,6 +38,522 @@ class FakeUpload:
 
     async def read(self) -> bytes:
         return self.content
+
+
+class FakeResourceBindingRepository:
+    def __init__(self):
+        self.project = SimpleNamespace(
+            project_id="project-1",
+            user_id="user-1",
+            source_type="manual",
+            binding_status="unbound",
+            last_bound_at=None,
+            last_binding_sync_error="old-error",
+        )
+        self.rows = []
+        self.active_local = None
+        self.remote_exists = False
+        self.committed = False
+        self.refreshed = None
+
+    async def get_project(self, project_id):
+        assert project_id == "project-1"
+        return self.project
+
+    async def get_active_by_local_resource(self, resource_type, resource_id):
+        assert (resource_type, resource_id) == ("project", "project-1")
+        return self.active_local
+
+    async def exists_active_by_remote_resource(
+        self,
+        provider,
+        connection_id,
+        remote_resource_type,
+        remote_resource_id,
+    ):
+        assert provider == "zentao"
+        assert connection_id == "conn-1"
+        assert remote_resource_type == "project"
+        assert remote_resource_id == "101"
+        return self.remote_exists
+
+    def add(self, binding):
+        self.rows.append(binding)
+
+    async def commit(self):
+        self.committed = True
+
+    async def refresh(self, row):
+        self.refreshed = row
+
+
+class FakeIntegrationConnectionService:
+    async def get_owned(self, user_id, provider, connection_id):
+        assert user_id == "user-1"
+        assert provider == "zentao"
+        assert connection_id == "conn-1"
+        return SimpleNamespace(
+            connection_id="conn-1",
+            provider="zentao",
+            base_url="https://zentao.example",
+            access_token="token",
+        )
+
+
+class FakeZentaoResourceClient:
+    def __init__(self, *, deleted=False):
+        self.deleted = deleted
+        self.project_calls = []
+
+    async def get_project(self, connection, remote_resource_id):
+        self.project_calls.append((connection.connection_id, remote_resource_id))
+        return SimpleNamespace(
+            id=101,
+            name="旧禅道项目",
+            deleted=self.deleted,
+        )
+
+
+class FakeIntegrationRepositoryForZentaoBrowse:
+    async def get(self, user_id, provider, connection_id):
+        assert user_id == "user-1"
+        assert provider == "zentao"
+        assert connection_id == "conn-1"
+        return SimpleNamespace(
+            connection_id="conn-1",
+            provider="zentao",
+            base_url="https://zentao.example",
+            access_token="token",
+        )
+
+
+class FakeZentaoBrowseClient:
+    def __init__(self):
+        self.calls = []
+
+    async def list_projects(self, connection, page=1, page_size=100):
+        self.calls.append(("projects", connection.connection_id, page, page_size))
+        return {
+            "items": [
+                SimpleNamespace(
+                    id=101,
+                    name="项目A",
+                    code="PA",
+                    description="desc",
+                    status="doing",
+                    begin="2026-01-01",
+                    end="2026-02-01",
+                    created_at="2026-01-01T00:00:00Z",
+                    updated_at="2026-01-02T00:00:00Z",
+                    deleted=False,
+                ),
+                SimpleNamespace(id=102, name="已删除项目", deleted=True),
+            ],
+            "total": 2,
+        }
+
+    async def list_project_executions(self, connection, remote_project_id, page=1, page_size=100):
+        self.calls.append(
+            ("executions", connection.connection_id, remote_project_id, page, page_size)
+        )
+        return {
+            "items": [
+                SimpleNamespace(
+                    id=201,
+                    project_id=101,
+                    name="执行A",
+                    description="exec desc",
+                    status="doing",
+                    begin="2026-01-03",
+                    end="2026-01-20",
+                    parent_id=0,
+                    created_at="",
+                    updated_at="",
+                    deleted=False,
+                )
+            ],
+            "total": 1,
+        }
+
+    async def list_execution_testtasks(
+        self,
+        connection,
+        remote_execution_id,
+        page=1,
+        page_size=100,
+    ):
+        self.calls.append(
+            ("testtasks", connection.connection_id, remote_execution_id, page, page_size)
+        )
+        return {
+            "items": [
+                SimpleNamespace(
+                    id=301,
+                    project_id=101,
+                    execution_id=201,
+                    name="测试单A",
+                    title="测试单标题",
+                    description="",
+                    status="doing",
+                    type="feature",
+                    owner="tester",
+                    opened_by="pm",
+                    begin="",
+                    end="",
+                    created_at="",
+                    updated_at="",
+                    deleted=False,
+                )
+            ],
+            "total": 1,
+        }
+
+    async def list_execution_stories(self, connection, remote_execution_id):
+        self.calls.append(("stories", connection.connection_id, remote_execution_id))
+        return {
+            "items": [
+                SimpleNamespace(
+                    id=401,
+                    title="需求A",
+                    product_id=1,
+                    module_id=2,
+                    plan_id=3,
+                    status="active",
+                    stage="developing",
+                    priority="2",
+                    assigned_to="dev",
+                    opened_by="pm",
+                    created_at="",
+                    updated_at="",
+                    deleted=False,
+                )
+            ],
+            "total": 1,
+        }
+
+    async def list_execution_cases(self, connection, remote_execution_id, page=1, page_size=100):
+        self.calls.append(("cases", connection.connection_id, remote_execution_id, page, page_size))
+        return {
+            "items": [
+                SimpleNamespace(
+                    id="501",
+                    module="模块A",
+                    title="用例A",
+                    preconditions="前置",
+                    steps="步骤",
+                    expected_results="预期",
+                    priority="1",
+                    case_type="feature",
+                    order_no=7,
+                    deleted=False,
+                )
+            ],
+            "total": 1,
+        }
+
+
+class FakeIntegrationRepositoryForConnectionAuth:
+    def __init__(self):
+        self.rows = []
+        self.commits = 0
+
+    async def get(self, user_id, provider, connection_id):
+        return next(
+            (
+                row
+                for row in self.rows
+                if row.user_id == user_id
+                and row.provider == provider
+                and row.connection_id == connection_id
+                and row.deleted_at is None
+            ),
+            None,
+        )
+
+    async def list(self, user_id, provider):
+        return [
+            row
+            for row in self.rows
+            if row.user_id == user_id and row.provider == provider and row.deleted_at is None
+        ]
+
+    def add(self, connection):
+        self.rows.append(connection)
+
+    async def commit(self):
+        self.commits += 1
+
+    async def refresh(self, connection):
+        return None
+
+
+class FakeZentaoAuthProvider:
+    def __init__(self, token="token-1"):
+        self.token = token
+        self.calls = []
+
+    async def authenticate(self, base_url, account, password):
+        self.calls.append((base_url, account, password))
+        return SimpleNamespace(access_token=self.token, refresh_token="", expires_at=None)
+
+
+class FakeZentaoAuthHttpClient:
+    kwargs = {}
+
+    def __init__(self, **kwargs):
+        self.__class__.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return None
+
+    async def post(self, url, json):
+        return SimpleNamespace(
+            status_code=200,
+            text='{"token":"token-ssl"}',
+            json=lambda: {"token": "token-ssl"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_zentao_auth_provider_disables_ssl_verification(monkeypatch):
+    monkeypatch.setattr(
+        "testing_agent.services.zentao_auth.httpx.AsyncClient",
+        FakeZentaoAuthHttpClient,
+    )
+
+    result = await ZentaoAuthProvider().authenticate(
+        "https://zentao.example",
+        "tester",
+        "secret",
+    )
+
+    assert result.access_token == "token-ssl"
+    assert FakeZentaoAuthHttpClient.kwargs["verify"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_zentao_connection_authenticates_and_stores_token(monkeypatch):
+    ids = iter(["connection-1"])
+    monkeypatch.setattr("testing_agent.services.integration_connection.new_id", lambda: next(ids))
+    repository = FakeIntegrationRepositoryForConnectionAuth()
+    auth_provider = FakeZentaoAuthProvider()
+    service = IntegrationConnectionService(repository, zentao_auth_provider=auth_provider)
+
+    result = await service.create(
+        "zentao",
+        {
+            "name": "公司禅道",
+            "baseUrl": "https://zentao.example",
+            "account": "tester",
+            "password": "secret",
+        },
+        "user-1",
+    )
+
+    assert auth_provider.calls == [("https://zentao.example", "tester", "secret")]
+    assert repository.rows[0].access_token == "token-1"
+    assert repository.rows[0].auth_type == "account_password"
+    assert repository.rows[0].last_auth_at is not None
+    assert result["connectionId"] == "connection-1"
+    assert result["hasAccessToken"] is True
+
+
+@pytest.mark.asyncio
+async def test_project_zentao_binding_uses_go_request_and_updates_project_summary(
+    monkeypatch,
+):
+    ids = iter(["binding-1"])
+    monkeypatch.setattr("testing_agent.services.resource_binding.new_id", lambda: next(ids))
+    repository = FakeResourceBindingRepository()
+    zentao_client = FakeZentaoResourceClient()
+    service = ResourceBindingService(
+        repository,
+        FakeIntegrationConnectionService(),
+        zentao_client,
+    )
+
+    result = await service.create(
+        "project",
+        "project-1",
+        {
+            "provider": "zentao",
+            "connectionId": "conn-1",
+            "remoteResourceId": "101",
+        },
+        "user-1",
+    )
+
+    binding = repository.rows[0]
+    assert result["bindingId"] == "binding-1"
+    assert result["remoteResourceType"] == "project"
+    assert result["remoteResourceId"] == "101"
+    assert result["remoteNameSnapshot"] == "旧禅道项目"
+    assert result["lastVerifiedAt"] is not None
+    assert binding.remote_parent_id == ""
+    assert binding.extra_json == {}
+    assert zentao_client.project_calls == [("conn-1", "101")]
+    assert repository.project.source_type == "bound"
+    assert repository.project.binding_status == "bound"
+    assert repository.project.last_bound_at is not None
+    assert repository.project.last_binding_sync_error == ""
+    assert repository.committed is True
+    assert repository.refreshed is binding
+
+
+@pytest.mark.asyncio
+async def test_project_zentao_binding_rejects_existing_active_local_binding():
+    repository = FakeResourceBindingRepository()
+    repository.active_local = SimpleNamespace(binding_id="existing")
+    service = ResourceBindingService(
+        repository,
+        FakeIntegrationConnectionService(),
+        FakeZentaoResourceClient(),
+    )
+
+    with pytest.raises(type(ErrResourceBindingAlreadyExists)) as exc_info:
+        await service.create(
+            "project",
+            "project-1",
+            {
+                "provider": "zentao",
+                "connectionId": "conn-1",
+                "remoteResourceId": "101",
+            },
+            "user-1",
+        )
+
+    assert exc_info.value.code == ErrResourceBindingAlreadyExists.code
+
+
+@pytest.mark.asyncio
+async def test_project_zentao_binding_rejects_existing_active_remote_binding():
+    repository = FakeResourceBindingRepository()
+    repository.remote_exists = True
+    service = ResourceBindingService(
+        repository,
+        FakeIntegrationConnectionService(),
+        FakeZentaoResourceClient(),
+    )
+
+    with pytest.raises(type(ErrRemoteResourceAlreadyBound)) as exc_info:
+        await service.create(
+            "project",
+            "project-1",
+            {
+                "provider": "zentao",
+                "connectionId": "conn-1",
+                "remoteResourceId": "101",
+            },
+            "user-1",
+        )
+
+    assert exc_info.value.code == ErrRemoteResourceAlreadyBound.code
+
+
+@pytest.mark.asyncio
+async def test_project_zentao_binding_rejects_deleted_remote_project():
+    repository = FakeResourceBindingRepository()
+    service = ResourceBindingService(
+        repository,
+        FakeIntegrationConnectionService(),
+        FakeZentaoResourceClient(deleted=True),
+    )
+
+    with pytest.raises(type(ErrZentaoRemoteResourceUnavailable)) as exc_info:
+        await service.create(
+            "project",
+            "project-1",
+            {
+                "provider": "zentao",
+                "connectionId": "conn-1",
+                "remoteResourceId": "101",
+            },
+            "user-1",
+        )
+
+    assert exc_info.value.code == ErrZentaoRemoteResourceUnavailable.code
+    assert "已删除" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_zentao_candidate_lists_are_loaded_from_remote_client():
+    client = FakeZentaoBrowseClient()
+    service = IntegrationConnectionService(
+        FakeIntegrationRepositoryForZentaoBrowse(),
+        client,
+    )
+
+    projects = await service.list_zentao_projects("conn-1", "user-1", page=2, page_size=50)
+    executions = await service.list_zentao_project_executions(
+        "conn-1",
+        "101",
+        "user-1",
+        page=3,
+        page_size=40,
+    )
+    testtasks = await service.list_zentao_execution_testtasks(
+        "conn-1",
+        "201",
+        "user-1",
+        page=4,
+        page_size=30,
+    )
+    stories = await service.list_zentao_execution_stories("conn-1", "201", "user-1")
+    cases = await service.list_zentao_execution_cases(
+        "conn-1",
+        "201",
+        "user-1",
+        page=5,
+        page_size=20,
+    )
+
+    assert projects == {
+        "connectionId": "conn-1",
+        "items": [
+            {
+                "id": 101,
+                "name": "项目A",
+                "code": "PA",
+                "description": "desc",
+                "status": "doing",
+                "begin": "2026-01-01",
+                "end": "2026-02-01",
+                "createdAt": "2026-01-01T00:00:00Z",
+                "updatedAt": "2026-01-02T00:00:00Z",
+            }
+        ],
+        "total": 2,
+    }
+    assert executions["items"] == [
+        {
+            "id": 201,
+            "projectId": 101,
+            "name": "执行A",
+            "description": "exec desc",
+            "status": "doing",
+            "begin": "2026-01-03",
+            "end": "2026-01-20",
+            "createdAt": "",
+            "updatedAt": "",
+        }
+    ]
+    assert executions["remoteProjectId"] == "101"
+    assert testtasks["items"][0]["executionId"] == 201
+    assert testtasks["items"][0]["title"] == "测试单标题"
+    assert stories["items"][0]["title"] == "需求A"
+    assert stories["items"][0]["productId"] == 1
+    assert cases["items"][0]["title"] == "用例A"
+    assert cases["items"][0]["expectedResults"] == "预期"
+    assert client.calls == [
+        ("projects", "conn-1", 2, 50),
+        ("executions", "conn-1", "101", 3, 40),
+        ("testtasks", "conn-1", "201", 4, 30),
+        ("stories", "conn-1", "201"),
+        ("cases", "conn-1", "201", 5, 20),
+    ]
 
 
 @pytest.mark.asyncio
@@ -1125,7 +1649,7 @@ async def test_requirement_analysis_list_runs_uses_task_scope():
 
     payload = await service.list_runs("requirement_analysis", "task-1", "user-1")
 
-    assert payload == [ai_tasks.dump_run(run)]
+    assert payload == {"total": 1, "items": [ai_tasks.dump_run(run)]}
 
 
 @pytest.mark.asyncio

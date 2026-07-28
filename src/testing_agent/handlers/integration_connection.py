@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends
+from fastapi import Depends, Query
 
 from testing_agent.api.deps import get_current_user_id, get_integration_connection_service
 from testing_agent.core.errors import success_payload
@@ -72,24 +72,36 @@ async def delete_zentao_connection(
 
 async def list_zentao_projects(
     connection_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=1000, alias="pageSize"),
     user_id: str = Depends(get_current_user_id),
     service: IntegrationConnectionService = Depends(get_integration_connection_service),
 ):
-    return success_payload(await service.list_remote("zentao", connection_id, user_id))
+    return success_payload(
+        await service.list_zentao_projects(
+            connection_id,
+            user_id,
+            page=page,
+            page_size=page_size,
+        )
+    )
 
 
 async def list_zentao_project_executions(
     connection_id: str,
     remote_project_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=1000, alias="pageSize"),
     user_id: str = Depends(get_current_user_id),
     service: IntegrationConnectionService = Depends(get_integration_connection_service),
 ):
     return success_payload(
-        await service.list_remote(
-            "zentao",
+        await service.list_zentao_project_executions(
             connection_id,
+            remote_project_id,
             user_id,
-            remoteProjectId=remote_project_id,
+            page=page,
+            page_size=page_size,
         )
     )
 
@@ -97,15 +109,18 @@ async def list_zentao_project_executions(
 async def list_zentao_execution_testtasks(
     connection_id: str,
     remote_execution_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=1000, alias="pageSize"),
     user_id: str = Depends(get_current_user_id),
     service: IntegrationConnectionService = Depends(get_integration_connection_service),
 ):
     return success_payload(
-        await service.list_remote(
-            "zentao",
+        await service.list_zentao_execution_testtasks(
             connection_id,
+            remote_execution_id,
             user_id,
-            remoteExecutionId=remote_execution_id,
+            page=page,
+            page_size=page_size,
         )
     )
 
@@ -117,11 +132,10 @@ async def list_zentao_execution_stories(
     service: IntegrationConnectionService = Depends(get_integration_connection_service),
 ):
     return success_payload(
-        await service.list_remote(
-            "zentao",
+        await service.list_zentao_execution_stories(
             connection_id,
+            remote_execution_id,
             user_id,
-            remoteExecutionId=remote_execution_id,
         )
     )
 
@@ -129,15 +143,18 @@ async def list_zentao_execution_stories(
 async def list_zentao_execution_cases(
     connection_id: str,
     remote_execution_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=1000, alias="pageSize"),
     user_id: str = Depends(get_current_user_id),
     service: IntegrationConnectionService = Depends(get_integration_connection_service),
 ):
     return success_payload(
-        await service.list_remote(
-            "zentao",
+        await service.list_zentao_execution_cases(
             connection_id,
+            remote_execution_id,
             user_id,
-            remoteExecutionId=remote_execution_id,
+            page=page,
+            page_size=page_size,
         )
     )
 

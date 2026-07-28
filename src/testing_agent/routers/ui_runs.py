@@ -10,7 +10,7 @@ from testing_agent.handlers.ui_test_case_run import (
     list_ui_suite_runs,
     run_ui_suite,
 )
-from testing_agent.schemas.common import ApiResponse
+from testing_agent.schemas.common import ApiResponse, ListResponse
 from testing_agent.schemas.ui_run import (
     UiCaseRunResponse,
     UiSuiteRunReportResponse,
@@ -32,7 +32,7 @@ router.post(
 )(run_ui_suite)
 router.get(
     "/ui-test-suites/{suite_id}/runs",
-    response_model=ApiResponse[list[UiSuiteRunResponse]],
+    response_model=ApiResponse[ListResponse[UiSuiteRunResponse]],
 )(list_ui_suite_runs)
 router.get(
     "/ui-test-suite-runs/{suite_run_id}",

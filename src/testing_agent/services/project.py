@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from testing_agent.core.errors import ErrForbidden, ErrNotFound, ErrProjectNameAlreadyUse
 from testing_agent.core.sid import new_id
@@ -11,6 +12,7 @@ from testing_agent.schemas.project import (
     ProjectResponse,
     UpdateProjectRequest,
 )
+from testing_agent.services.common import list_payload
 
 
 def dump_project(project: Project) -> dict:
@@ -44,9 +46,9 @@ class ProjectService:
         await self.projects.refresh(project)
         return dump_project(project)
 
-    async def list(self, user_id: str) -> list[dict]:
+    async def list(self, user_id: str) -> dict[str, Any]:
         rows = await self.projects.list_active_by_user(user_id)
-        return [dump_project(row) for row in rows]
+        return list_payload([dump_project(row) for row in rows])
 
     async def get(self, user_id: str, project_id: str) -> dict:
         return dump_project(await self.get_owned_entity(user_id, project_id))

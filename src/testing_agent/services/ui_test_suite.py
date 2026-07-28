@@ -8,7 +8,7 @@ from testing_agent.core.sid import new_id
 from testing_agent.models.ui_test_suite import UiTestSuite
 from testing_agent.repositories.ui_test_suite import UiTestSuiteRepository
 from testing_agent.schemas.ui_test_suite import UiSuiteRequest, UiSuiteResponse
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 
 class UiTestSuiteService:
@@ -47,10 +47,10 @@ class UiTestSuiteService:
         await self.repository.refresh(suite)
         return dump(UiSuiteResponse, suite)
 
-    async def list(self, user_id: str, requirement_id: str) -> list[dict]:
+    async def list(self, user_id: str, requirement_id: str) -> dict[str, Any]:
         await self.ensure_requirement_owner(user_id, requirement_id)
         rows = await self.repository.list_by_requirement(requirement_id)
-        return [dump(UiSuiteResponse, row) for row in rows]
+        return list_payload([dump(UiSuiteResponse, row) for row in rows])
 
     async def get(self, user_id: str, suite_id: str) -> dict:
         return dump(UiSuiteResponse, await self.get_owned_entity(user_id, suite_id))

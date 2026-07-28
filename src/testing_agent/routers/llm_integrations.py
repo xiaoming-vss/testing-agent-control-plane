@@ -9,7 +9,7 @@ from testing_agent.handlers.integration_connection import (
     list_llm_connections,
     update_llm_connection,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.integrations import IntegrationConnectionResponse
 
 router = APIRouter()
@@ -20,7 +20,7 @@ router.post(
 )(create_llm_connection)
 router.get(
     "/integrations/llm/connections",
-    response_model=ApiResponse[list[IntegrationConnectionResponse]],
+    response_model=ApiResponse[ListResponse[IntegrationConnectionResponse]],
 )(list_llm_connections)
 router.get(
     "/integrations/llm/connections/{connection_id}",

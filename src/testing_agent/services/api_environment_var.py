@@ -11,7 +11,7 @@ from testing_agent.schemas.api_environment_var import (
     ApiEnvironmentVarRequest,
     ApiEnvironmentVarResponse,
 )
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 
 class ApiEnvironmentVarService:
@@ -50,10 +50,10 @@ class ApiEnvironmentVarService:
         await self.repository.refresh(var)
         return dump(ApiEnvironmentVarResponse, var)
 
-    async def list(self, user_id: str, environment_id: str) -> list[dict]:
+    async def list(self, user_id: str, environment_id: str) -> dict[str, Any]:
         await self.get_owned_environment(user_id, environment_id)
         rows = await self.repository.list_by_environment(environment_id)
-        return [dump(ApiEnvironmentVarResponse, row) for row in rows]
+        return list_payload([dump(ApiEnvironmentVarResponse, row) for row in rows])
 
     async def get(self, user_id: str, env_var_id: str) -> dict:
         return dump(ApiEnvironmentVarResponse, await self.get_owned_entity(user_id, env_var_id))

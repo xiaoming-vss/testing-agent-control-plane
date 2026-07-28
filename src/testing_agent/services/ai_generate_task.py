@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from fastapi.encoders import jsonable_encoder
 
 from testing_agent.core.errors import (
     ErrApiCaseGenerateTaskRunReviewed,
@@ -22,6 +23,7 @@ from testing_agent.models.function_test_case import FunctionTestCase
 from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.models.worker_task import WorkerTask
 from testing_agent.repositories.ai_generate_task import AiGenerateTaskRepository
+from testing_agent.repositories.sprint_daily_metrics import SprintDailyMetricsRepository
 from testing_agent.schemas.requirement import normalize_document_type
 from testing_agent.services.api_collection import (
     import_items,
@@ -33,7 +35,10 @@ from testing_agent.services.api_collection import (
     require_string_map,
     validate_api_collection_import_payload,
 )
+from testing_agent.services.common import list_payload
 from testing_agent.services.requirement import dump_requirement
+from testing_agent.services.sprint_daily_metrics import SprintDailyMetricsService
+from testing_agent.services.test_report_pdf import markdown_to_pdf_bytes
 
 
 def task_type_for(kind: str) -> str:
@@ -41,6 +46,8 @@ def task_type_for(kind: str) -> str:
         return "functional_case_generate"
     if kind == "requirement_analysis":
         return "requirement_analysis"
+    if kind == "test_report":
+        return "test_report_generate"
     return "api_case_generate"
 
 
@@ -60,6 +67,8 @@ REQUIREMENT_ANALYSIS_NEXT_STAGE = {
     "writing_requirement": "feature_understanding",
 }
 REVISION_INSTRUCTION_FIELD = "revisionInstruction"
+DEFAULT_FUNCTION_CASE_MODULE = "未分组"
+MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH = 180
 
 
 def next_function_case_stage(stage: str) -> str | None:
@@ -146,6 +155,29 @@ def worker_requirement_document_download_url(worker_task_id: str) -> str:
     return f"/internal/ai-worker/tasks/{worker_task_id}/requirement-document"
 
 
+def build_test_report_run_snapshot(
+    task: AiGenerateTask,
+    run_id: str,
+    snapshot_date: str,
+    daily_metrics: dict[str, Any],
+    llm_connection_id: str,
+    instruction: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "taskId": task.task_id,
+        "runId": run_id,
+        "taskType": task.task_type,
+        "name": task.name,
+        "projectId": task.project_id,
+        "sprintId": task.sprint_id,
+        "requirementId": task.requirement_id,
+        "snapshotDate": snapshot_date,
+        "llmConnectionId": llm_connection_id,
+        "dailyMetrics": jsonable_encoder(daily_metrics),
+        "instruction": task.instruction if instruction is None else instruction,
+    }
+
+
 async def build_generate_run_snapshot(
     repository: AiGenerateTaskRepository,
     kind: str,
@@ -166,9 +198,7 @@ async def build_generate_run_snapshot(
             document_download_url = (
                 worker_requirement_document_download_url(worker_task_id)
                 if worker_task_id
-                else requirement_document_download_url(
-                    requirement, str(task.requirement_id or "")
-                )
+                else requirement_document_download_url(requirement, str(task.requirement_id or ""))
             )
             source_content = requirement_source_content(requirement)
             if not source_content and document_type == "docx":
@@ -224,6 +254,95 @@ def generated_function_suites(run: ApiCaseGenerateTaskRun | Any) -> list[dict[st
     return [{"name": "AI Generated", "cases": cases}] if cases else []
 
 
+def generated_function_cases(run: ApiCaseGenerateTaskRun | Any) -> list[dict[str, Any]]:
+    payload = generated_payload(run)
+    cases = [
+        item
+        for item in import_items(payload, "cases", "functionCases", "testcases")
+        if isinstance(item, dict)
+    ]
+    if cases:
+        return cases
+
+    result: list[dict[str, Any]] = []
+    raw_suites = payload.get("suites")
+    if isinstance(raw_suites, list):
+        for suite in raw_suites:
+            if not isinstance(suite, dict):
+                continue
+            suite_name = str(suite.get("name") or "")
+            suite_cases = suite.get("cases") if isinstance(suite.get("cases"), list) else []
+            for item in suite_cases:
+                if not isinstance(item, dict):
+                    continue
+                case = dict(item)
+                if not case.get("case_module") and not case.get("module"):
+                    case["module"] = suite_name
+                result.append(case)
+    return result
+
+
+def first_present(item: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in item:
+            return item[key]
+    return None
+
+
+def import_lines(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return "\n".join(str(line).strip() for line in value)
+    return str(value).strip()
+
+
+def normalize_function_case_module(value: Any) -> str:
+    module = str(value or "").strip()
+    return module or DEFAULT_FUNCTION_CASE_MODULE
+
+
+def normalize_generated_function_case(item: dict[str, Any], index: int) -> dict[str, Any]:
+    module = normalize_function_case_module(first_present(item, "case_module", "module"))
+    title = str(first_present(item, "case_title", "title", "name") or "").strip()
+    priority = str(first_present(item, "priority") or "")
+    case_type = str(first_present(item, "case_type", "caseType") or "")
+    if (
+        not title
+        or len(title) > 255
+        or len(module) > 120
+        or len(priority) > 20
+        or len(case_type) > 50
+    ):
+        raise ErrBadRequest
+    return {
+        "module": module,
+        "title": title,
+        "preconditions": import_lines(first_present(item, "precondition", "preconditions")),
+        "steps": import_lines(first_present(item, "test_steps", "steps")),
+        "expected_results": import_lines(
+            first_present(item, "expected_results", "expectedResults")
+        ),
+        "priority": priority,
+        "case_type": case_type,
+        "order_no": int(first_present(item, "orderNo", "order_no") or index),
+    }
+
+
+def compact_imported_suite_ids(suite_ids: list[str]) -> str:
+    if not suite_ids:
+        return ""
+    joined = ",".join(suite_ids)
+    if len(joined) <= MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH:
+        return joined
+    summary = f"{suite_ids[0]},+{len(suite_ids) - 1}"
+    if len(summary) <= MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH:
+        return summary
+    if len(suite_ids[0]) <= MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH:
+        return suite_ids[0]
+    return suite_ids[0][:MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH]
+
+
 def is_ai_run_reviewable(status: str) -> bool:
     return status in {"success", "failed", "error", "canceled"}
 
@@ -255,6 +374,16 @@ def normalize_config_json(value: Any) -> dict[str, Any]:
     raise ErrBadRequest
 
 
+def normalize_function_stage_config(stage: str, value: Any) -> dict[str, Any]:
+    config = dict(normalize_config_json(value))
+    if stage == "case_names" and "categories" in config:
+        case_names = config.get("caseNames")
+        if not isinstance(case_names, dict):
+            case_names = {}
+        config["caseNames"] = {**case_names, "categories": config.pop("categories")}
+    return config
+
+
 def requirement_analysis_import_content(run: ApiCaseGenerateTaskRun | Any) -> str:
     result_yaml = str(run.result_yaml or "").strip()
     if result_yaml:
@@ -270,8 +399,17 @@ def requirement_analysis_import_content(run: ApiCaseGenerateTaskRun | Any) -> st
 
 
 class AiGenerateTaskService:
-    def __init__(self, repository: AiGenerateTaskRepository):
+    def __init__(
+        self,
+        repository: AiGenerateTaskRepository,
+        sprint_daily_metrics_service: SprintDailyMetricsService | None = None,
+    ):
         self.repository = repository
+        if sprint_daily_metrics_service is None and hasattr(repository, "session"):
+            sprint_daily_metrics_service = SprintDailyMetricsService(
+                SprintDailyMetricsRepository(repository.session)
+            )
+        self.sprint_daily_metrics_service = sprint_daily_metrics_service
 
     async def ensure_project_owner(self, user_id: str, project_id: str) -> None:
         project = await self.repository.get_project(project_id)
@@ -321,9 +459,7 @@ class AiGenerateTaskService:
             raise ErrForbidden
         return run
 
-    async def create(
-        self, kind: str, project_id: str, body: dict[str, Any], user_id: str
-    ) -> dict:
+    async def create(self, kind: str, project_id: str, body: dict[str, Any], user_id: str) -> dict:
         await self.ensure_project_owner(user_id, project_id)
         sprint_id = str(body.get("sprintId") or body.get("sprint_id") or "")
         requirement_id = str(body.get("requirementId") or body.get("requirement_id") or "")
@@ -338,6 +474,17 @@ class AiGenerateTaskService:
             if sprint is None or sprint.project_id != project_id:
                 raise ErrNotFound
             sprint_id = requirement.sprint_id
+        if kind == "test_report":
+            if not sprint_id:
+                raise ErrBadRequest
+            sprint = await self.repository.get_sprint(sprint_id)
+            if sprint is None or sprint.project_id != project_id:
+                raise ErrNotFound
+            existing = await self.repository.get_active_task_by_project_sprint_type(
+                project_id, sprint_id, task_type_for(kind)
+            )
+            if existing is not None:
+                raise ErrBadRequest
         if sprint_id:
             await self.ensure_sprint_owner(user_id, sprint_id)
         if requirement_id:
@@ -350,7 +497,11 @@ class AiGenerateTaskService:
                 or (
                     f"{requirement.name} analysis"
                     if kind == "requirement_analysis" and requirement is not None
-                    else f"{kind}-case-generate-task"
+                    else (
+                        "test-report-generate-task"
+                        if kind == "test_report"
+                        else f"{kind}-case-generate-task"
+                    )
                 )
             ),
             project_id=project_id,
@@ -360,7 +511,11 @@ class AiGenerateTaskService:
             source_type=str(
                 requirement.document_type
                 if kind == "requirement_analysis" and requirement is not None
-                else body.get("sourceType") or body.get("source_type") or "manual"
+                else (
+                    "daily_metrics"
+                    if kind == "test_report"
+                    else body.get("sourceType") or body.get("source_type") or "manual"
+                )
             ),
             source_content=str(
                 requirement.document_content
@@ -374,17 +529,15 @@ class AiGenerateTaskService:
         await self.repository.refresh(task)
         return dump_task(task)
 
-    async def list(self, kind: str, project_id: str, user_id: str) -> list[dict]:
+    async def list(self, kind: str, project_id: str, user_id: str) -> dict[str, Any]:
         await self.ensure_project_owner(user_id, project_id)
         rows = await self.repository.list_tasks(project_id, task_type_for(kind))
-        return [dump_task(row) for row in rows]
+        return list_payload([dump_task(row) for row in rows])
 
     async def get(self, kind: str, task_id: str, user_id: str) -> dict:
         return dump_task(await self.owned_task(user_id, task_id, kind))
 
-    async def update(
-        self, kind: str, task_id: str, body: dict[str, Any], user_id: str
-    ) -> dict:
+    async def update(self, kind: str, task_id: str, body: dict[str, Any], user_id: str) -> dict:
         task = await self.owned_task(user_id, task_id, kind)
         field_map = {
             "name": "name",
@@ -407,9 +560,116 @@ class AiGenerateTaskService:
         await self.repository.commit()
         return {}
 
-    async def run(
-        self, kind: str, task_id: str, body: dict[str, Any] | None, user_id: str
+    async def test_report_task_for_run(
+        self, project_id: str, body: dict[str, Any], user_id: str
+    ) -> AiGenerateTask:
+        await self.ensure_project_owner(user_id, project_id)
+        sprint_id = str(body.get("sprintId") or body.get("sprint_id") or "")
+        if not sprint_id:
+            raise ErrBadRequest
+        sprint = await self.repository.get_sprint(sprint_id)
+        if sprint is None or sprint.project_id != project_id:
+            raise ErrNotFound
+        existing = await self.repository.get_active_task_by_project_sprint_type(
+            project_id, sprint_id, task_type_for("test_report")
+        )
+        if existing is not None:
+            return existing
+        sprint_name = str(getattr(sprint, "name", "") or "").strip()
+        return AiGenerateTask(
+            task_id=new_id(),
+            task_type=task_type_for("test_report"),
+            name=f"{sprint_name} 测试报告生成" if sprint_name else "测试报告生成",
+            project_id=project_id,
+            sprint_id=sprint_id,
+            requirement_id="",
+            creator_user_id=user_id,
+            source_type="daily_metrics",
+            source_content="",
+            instruction="",
+        )
+
+    async def run_test_report(
+        self, project_id: str, body: dict[str, Any] | None, user_id: str
     ) -> dict:
+        body = body or {}
+        llm_connection_id = str(body.get("connectionId") or body.get("llmConnectionId") or "")
+        snapshot_date = str(body.get("snapshotDate") or body.get("snapshot_date") or "")
+        if not llm_connection_id or not snapshot_date:
+            raise ErrBadRequest
+        task = await self.test_report_task_for_run(project_id, body, user_id)
+        run_id = new_id()
+        worker_task_id = new_id()
+        if self.sprint_daily_metrics_service is None:
+            raise ErrBadRequest
+        daily_metrics = await self.sprint_daily_metrics_service.get(
+            task.sprint_id, snapshot_date, user_id
+        )
+        run_instruction = body.get("instruction")
+        snapshot = build_test_report_run_snapshot(
+            task,
+            run_id,
+            snapshot_date,
+            daily_metrics,
+            llm_connection_id,
+            None if run_instruction is None else str(run_instruction),
+        )
+        run = ApiCaseGenerateTaskRun(
+            run_id=run_id,
+            task_id=task.task_id,
+            requirement_id="",
+            sprint_id=task.sprint_id,
+            project_id=task.project_id,
+            trigger_user_id=user_id,
+            trigger_type=str(body.get("triggerType") or "manual"),
+            status="pending",
+            checkpoint_enabled=False,
+            current_stage="",
+            stage_status="",
+            snapshot_json=snapshot,
+            config_json=normalize_config_json(body.get("configJson")),
+            result_summary_json={},
+        )
+        worker_task = WorkerTask(
+            domain="ai",
+            task_id=worker_task_id,
+            task_type=task.task_type,
+            run_id=run.run_id,
+            generate_task_id=task.task_id,
+            llm_connection_id=llm_connection_id,
+            status="pending",
+        )
+        rows: list[object] = [run, worker_task]
+        if getattr(task, "id", None) is None:
+            rows.insert(0, task)
+        self.repository.add_all(rows)
+        await self.repository.commit()
+        await self.repository.refresh(run)
+        return dump_run(run)
+
+    async def list_test_report_runs(
+        self, project_id: str, sprint_id: str, user_id: str
+    ) -> dict[str, Any]:
+        await self.ensure_project_owner(user_id, project_id)
+        sprint = await self.repository.get_sprint(sprint_id)
+        if sprint is None or sprint.project_id != project_id:
+            raise ErrNotFound
+        rows = await self.repository.list_runs_by_project_sprint_task_type(
+            project_id, sprint_id, task_type_for("test_report")
+        )
+        return list_payload([dump_run(row) for row in rows])
+
+    async def export_test_report_pdf(self, run_id: str, user_id: str) -> tuple[bytes, str]:
+        run = await self.owned_run(user_id, run_id, "test_report")
+        markdown = str(run.result_yaml or "").strip()
+        if not markdown:
+            raise ErrBadRequest
+        snapshot = run.snapshot_json if isinstance(run.snapshot_json, dict) else {}
+        title = str(snapshot.get("name") or "测试报告")
+        filename = f"test-report-{run.run_id}.pdf"
+        return markdown_to_pdf_bytes(markdown, title=title), filename
+
+    async def run(self, kind: str, task_id: str, body: dict[str, Any] | None, user_id: str) -> dict:
         task = await self.owned_task(user_id, task_id, kind)
         body = body or {}
         llm_connection_id = str(body.get("connectionId") or body.get("llmConnectionId") or "")
@@ -418,18 +678,34 @@ class AiGenerateTaskService:
         run_id = new_id()
         worker_task_id = new_id()
         run_instruction = body.get("instruction")
-        snapshot = await build_generate_run_snapshot(
-            self.repository,
-            kind,
-            task,
-            run_id,
-            None if run_instruction is None else str(run_instruction),
-            worker_task_id=worker_task_id,
-        )
+        if kind == "test_report":
+            snapshot_date = str(body.get("snapshotDate") or body.get("snapshot_date") or "")
+            if not snapshot_date:
+                raise ErrBadRequest
+            if self.sprint_daily_metrics_service is None:
+                raise ErrBadRequest
+            daily_metrics = await self.sprint_daily_metrics_service.get(
+                task.sprint_id, snapshot_date, user_id
+            )
+            snapshot = build_test_report_run_snapshot(
+                task,
+                run_id,
+                snapshot_date,
+                daily_metrics,
+                llm_connection_id,
+                None if run_instruction is None else str(run_instruction),
+            )
+        else:
+            snapshot = await build_generate_run_snapshot(
+                self.repository,
+                kind,
+                task,
+                run_id,
+                None if run_instruction is None else str(run_instruction),
+                worker_task_id=worker_task_id,
+            )
         checkpoint_enabled = (
-            True
-            if kind == "requirement_analysis"
-            else bool(body.get("checkpointEnabled", False))
+            True if kind == "requirement_analysis" else bool(body.get("checkpointEnabled", False))
         )
         current_stage = ""
         if checkpoint_enabled:
@@ -468,10 +744,10 @@ class AiGenerateTaskService:
         await self.repository.refresh(run)
         return dump_run(run)
 
-    async def list_runs(self, kind: str, task_id: str, user_id: str) -> list[dict]:
+    async def list_runs(self, kind: str, task_id: str, user_id: str) -> dict[str, Any]:
         await self.owned_task(user_id, task_id, kind)
         rows = await self.repository.list_runs(task_id)
-        return [dump_run(row) for row in rows]
+        return list_payload([dump_run(row) for row in rows])
 
     async def import_requirement_analysis_run(self, run_id: str, user_id: str) -> dict:
         run = await self.owned_run(user_id, run_id, "requirement_analysis")
@@ -566,50 +842,71 @@ class AiGenerateTaskService:
         self, user_id: str, run: ApiCaseGenerateTaskRun
     ) -> list[str]:
         await self.ensure_requirement_owner(user_id, run.requirement_id)
-        suites = generated_function_suites(run)
-        if not suites:
+        cases = generated_function_cases(run)
+        if not cases:
             raise ErrBadRequest
+
+        suites_by_name: dict[str, FunctionTestSuite] = {}
+        max_order_by_suite_id: dict[str, int] = {}
         suite_ids: list[str] = []
-        for suite_index, suite_data in enumerate(suites):
-            suite = FunctionTestSuite(
-                suite_id=new_id(),
-                requirement_id=run.requirement_id,
-                name=str(suite_data.get("name") or f"AI Generated {suite_index + 1}"),
-                description=str(suite_data.get("description") or ""),
-            )
-            self.repository.add(suite)
-            suite_ids.append(suite.suite_id)
-            cases = suite_data.get("cases") if isinstance(suite_data.get("cases"), list) else []
-            for case_index, item in enumerate(cases):
-                if not isinstance(item, dict):
-                    continue
-                self.repository.add(
-                    FunctionTestCase(
-                        case_id=new_id(),
-                        suite_id=suite.suite_id,
-                        module=str(item.get("module") or ""),
-                        title=str(
-                            item.get("title")
-                            or item.get("name")
-                            or f"Function Case {case_index + 1}"
-                        ),
-                        preconditions=str(
-                            item.get("preconditions") or item.get("precondition") or ""
-                        ),
-                        steps=str(item.get("steps") or ""),
-                        expected_results=str(
-                            item.get("expectedResults") or item.get("expected_results") or ""
-                        ),
-                        priority=str(item.get("priority") or ""),
-                        case_type=str(item.get("caseType") or item.get("case_type") or ""),
-                        order_no=int(item.get("orderNo", item.get("order_no", case_index))),
-                    )
+        suite_id_set: set[str] = set()
+
+        for case_index, raw_item in enumerate(cases):
+            item = normalize_generated_function_case(raw_item, case_index)
+            suite_name = item["module"]
+            suite = suites_by_name.get(suite_name)
+            if suite is None:
+                suite = await self.repository.get_function_suite_by_requirement_and_name(
+                    run.requirement_id, suite_name
                 )
+                if suite is None:
+                    suite = FunctionTestSuite(
+                        suite_id=new_id(),
+                        requirement_id=run.requirement_id,
+                        name=suite_name,
+                        description="",
+                    )
+                    self.repository.add(suite)
+                suites_by_name[suite_name] = suite
+            if suite.suite_id not in suite_id_set:
+                suite_ids.append(suite.suite_id)
+                suite_id_set.add(suite.suite_id)
+
+            existing = await self.repository.get_function_case_by_suite_and_title(
+                suite.suite_id, item["title"]
+            )
+            if existing is not None:
+                existing.module = suite.name
+                existing.preconditions = item["preconditions"]
+                existing.steps = item["steps"]
+                existing.expected_results = item["expected_results"]
+                existing.priority = item["priority"]
+                existing.case_type = item["case_type"]
+                continue
+
+            max_order = max_order_by_suite_id.get(suite.suite_id)
+            if max_order is None:
+                max_order = await self.repository.max_function_case_order_by_suite(suite.suite_id)
+            max_order += 1
+            max_order_by_suite_id[suite.suite_id] = max_order
+
+            self.repository.add(
+                FunctionTestCase(
+                    case_id=new_id(),
+                    suite_id=suite.suite_id,
+                    module=suite.name,
+                    title=item["title"],
+                    preconditions=item["preconditions"],
+                    steps=item["steps"],
+                    expected_results=item["expected_results"],
+                    priority=item["priority"],
+                    case_type=item["case_type"],
+                    order_no=max_order,
+                )
+            )
         return suite_ids
 
-    async def review(
-        self, kind: str, run_id: str, body: dict[str, Any], user_id: str
-    ) -> dict:
+    async def review(self, kind: str, run_id: str, body: dict[str, Any], user_id: str) -> dict:
         run = await self.owned_run(user_id, run_id, kind)
         if not is_ai_run_reviewable(run.status):
             raise ErrBadRequest
@@ -634,7 +931,7 @@ class AiGenerateTaskService:
                 run.imported_collection_id = collection_id
             else:
                 suite_ids = await self.import_generated_function_cases(user_id, run)
-                run.imported_collection_id = ",".join(suite_ids)
+                run.imported_collection_id = compact_imported_suite_ids(suite_ids)
             run.review_status = "approved"
         elif action == "reject":
             run.review_status = "rejected"
@@ -645,9 +942,7 @@ class AiGenerateTaskService:
         await self.repository.refresh(run)
         return dump_run(run)
 
-    async def save_stage_output(
-        self, run_id: str, body: dict[str, Any], user_id: str
-    ) -> dict:
+    async def save_stage_output(self, run_id: str, body: dict[str, Any], user_id: str) -> dict:
         run = await self.owned_run(user_id, run_id, "function")
         current_stage = str(body.get("currentStage") or body.get("stage") or run.current_stage)
         if (
@@ -662,6 +957,11 @@ class AiGenerateTaskService:
         else:
             run.stage_status = str(body.get("stageStatus") or "saved")
         run.snapshot_json = body.get("snapshotJson") or run.snapshot_json
+        if "configJson" in body:
+            run.config_json = {
+                **normalize_config_json(run.config_json),
+                **normalize_function_stage_config(current_stage, body.get("configJson")),
+            }
         run.result_yaml = str(body.get("resultYaml") or run.result_yaml)
         run.result_summary_json = body.get("resultSummaryJson") or run.result_summary_json
         await self.repository.commit()
@@ -781,10 +1081,7 @@ class AiGenerateTaskService:
             and current_stage == REQUIREMENT_ANALYSIS_FINAL_STAGE
             and run.current_stage in REQUIREMENT_ANALYSIS_FINAL_RUN_STAGES
         )
-        if (
-            not is_review_stage
-            and not is_final_stage
-        ):
+        if not is_review_stage and not is_final_stage:
             raise ErrBadRequest
 
         revision_instruction = str(
@@ -884,9 +1181,7 @@ class AiGenerateTaskService:
         await self.repository.refresh(run)
         return dump_run(run)
 
-    async def retry_stage(
-        self, run_id: str, body: dict[str, Any] | None, user_id: str
-    ) -> dict:
+    async def retry_stage(self, run_id: str, body: dict[str, Any] | None, user_id: str) -> dict:
         run = await self.owned_run(user_id, run_id, "function")
         run.stage_status = "retrying"
         if body and body.get("currentStage"):
@@ -894,3 +1189,6 @@ class AiGenerateTaskService:
         await self.repository.commit()
         await self.repository.refresh(run)
         return dump_run(run)
+
+
+

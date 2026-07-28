@@ -13,7 +13,7 @@ from testing_agent.handlers.requirement import (
     update_requirement,
     upload_requirement_document,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.requirement import RequirementResponse
 
 router = APIRouter()
@@ -28,7 +28,7 @@ router.post(
 )(create_requirement_from_file)
 router.get(
     "/sprints/{sprint_id}/requirements",
-    response_model=ApiResponse[list[RequirementResponse]],
+    response_model=ApiResponse[ListResponse[RequirementResponse]],
 )(list_requirements)
 router.get(
     "/requirements/{requirement_id}",

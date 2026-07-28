@@ -44,8 +44,26 @@ class FunctionCaseImportResponse(BaseModel):
     imported: int
 
 
+class ImportFunctionCasesToZentaoRequest(BaseModel):
+    product_id: int = Field(alias="productId", gt=0)
+    case_ids: list[str] = Field(default_factory=list, alias="caseIds")
+    module_id: int = Field(default=0, alias="moduleId", ge=0)
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FunctionCaseZentaoImportItemResponse(BaseModel):
+    case_id: str = Field(alias="caseId")
+    remote_case_id: int = Field(alias="remoteCaseId")
+    status: str
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class FunctionCaseZentaoImportResponse(BaseModel):
     suite_id: str = Field(alias="suiteId")
-    status: str
-    request: Any
+    product_id: int = Field(alias="productId")
+    remote_project_id: int = Field(alias="remoteProjectId")
+    remote_execution_id: int = Field(alias="remoteExecutionId")
+    imported_case_count: int = Field(alias="importedCaseCount")
+    items: list[FunctionCaseZentaoImportItemResponse]
     model_config = ConfigDict(populate_by_name=True)
+

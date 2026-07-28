@@ -14,7 +14,7 @@ from testing_agent.services.api_collection import (
     normalize_json_value,
     read_import_payload,
 )
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 
 class UiTestCaseService:
@@ -80,10 +80,10 @@ class UiTestCaseService:
         await self.repository.commit()
         return {"imported": created}
 
-    async def list(self, user_id: str, suite_id: str) -> list[dict]:
+    async def list(self, user_id: str, suite_id: str) -> dict[str, Any]:
         await self.get_owned_suite(user_id, suite_id)
         rows = await self.repository.list_by_suite(suite_id)
-        return [dump(UiCaseResponse, row) for row in rows]
+        return list_payload([dump(UiCaseResponse, row) for row in rows])
 
     async def get(self, user_id: str, case_id: str) -> dict:
         return dump(UiCaseResponse, await self.get_owned_entity(user_id, case_id))

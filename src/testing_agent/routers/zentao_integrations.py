@@ -15,7 +15,7 @@ from testing_agent.handlers.integration_connection import (
     reauth_zentao_connection,
     update_zentao_connection,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.integrations import (
     IntegrationConnectionResponse,
     RemoteResourceListResponse,
@@ -29,7 +29,7 @@ router.post(
 )(create_zentao_connection)
 router.get(
     "/integrations/zentao/connections",
-    response_model=ApiResponse[list[IntegrationConnectionResponse]],
+    response_model=ApiResponse[ListResponse[IntegrationConnectionResponse]],
 )(list_zentao_connections)
 router.get(
     "/integrations/zentao/connections/{connection_id}",

@@ -17,7 +17,7 @@ from testing_agent.handlers.ui_test_suite import (
     list_ui_suites,
     update_ui_suite,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.ui_test_case import UiCaseImportResponse, UiCaseResponse
 from testing_agent.schemas.ui_test_suite import UiSuiteResponse
 
@@ -29,7 +29,7 @@ router.post(
 )(create_ui_suite)
 router.get(
     "/requirements/{requirement_id}/ui-test-suites",
-    response_model=ApiResponse[list[UiSuiteResponse]],
+    response_model=ApiResponse[ListResponse[UiSuiteResponse]],
 )(list_ui_suites)
 router.get("/ui-test-suites/{suite_id}", response_model=ApiResponse[UiSuiteResponse])(
     get_ui_suite
@@ -49,7 +49,7 @@ router.post(
 )(import_ui_cases)
 router.get(
     "/ui-test-suites/{suite_id}/cases",
-    response_model=ApiResponse[list[UiCaseResponse]],
+    response_model=ApiResponse[ListResponse[UiCaseResponse]],
 )(list_ui_cases)
 router.get("/ui-test-cases/{case_id}", response_model=ApiResponse[UiCaseResponse])(
     get_ui_case

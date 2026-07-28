@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from testing_agent.core.errors import ErrNotFound, ErrSprintNameAlreadyUse
 from testing_agent.core.sid import new_id
 from testing_agent.models.sprint import Sprint
 from testing_agent.repositories.sprint import SprintRepository
 from testing_agent.schemas.sprint import CreateSprintRequest, SprintResponse, UpdateSprintRequest
+from testing_agent.services.common import list_payload
 from testing_agent.services.project import ProjectService
 
 
@@ -51,10 +53,10 @@ class SprintService:
         await self.sprints.refresh(sprint)
         return dump_sprint(sprint)
 
-    async def list(self, user_id: str, project_id: str) -> list[dict]:
+    async def list(self, user_id: str, project_id: str) -> dict[str, Any]:
         await self.projects.get_owned_entity(user_id, project_id)
         rows = await self.sprints.list_active_by_project(project_id)
-        return [dump_sprint(row) for row in rows]
+        return list_payload([dump_sprint(row) for row in rows])
 
     async def get(self, user_id: str, sprint_id: str) -> dict:
         return dump_sprint(await self.get_owned_entity(user_id, sprint_id))

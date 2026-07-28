@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, Response
 
 from testing_agent.api.deps import get_current_user_id, get_project_skill_space_service
 from testing_agent.core.errors import success_payload
+from testing_agent.services.common import list_payload
 from testing_agent.services.project_skill_space import ProjectSkillSpaceService, dump_skill
 
 
@@ -15,7 +16,10 @@ async def list_project_skills(
     user_id: str = Depends(get_current_user_id),
     service: ProjectSkillSpaceService = Depends(get_project_skill_space_service),
 ):
-    return success_payload(await service.list(project_id, user_id))
+    payload = await service.list(project_id, user_id)
+    if isinstance(payload, list):
+        payload = list_payload(payload)
+    return success_payload(payload)
 
 
 async def create_project_skill(

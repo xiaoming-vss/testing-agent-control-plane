@@ -19,6 +19,7 @@ class Settings:
     worker_key: str
     database_url: str
     uploads_dir: str
+    zentao_service_base_url: str = "http://127.0.0.1:8010"
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> Settings:
@@ -35,6 +36,9 @@ class Settings:
             uploads_dir=data.get("storage", {}).get(
                 "uploads_dir", "storage/ai-generate-task-sources"
             ),
+            zentao_service_base_url=data.get("integrations", {})
+            .get("zentao_service", {})
+            .get("base_url", "http://127.0.0.1:8010"),
         )
 
 

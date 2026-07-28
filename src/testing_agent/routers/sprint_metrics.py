@@ -7,14 +7,14 @@ from testing_agent.handlers.sprint_daily_metrics import (
     list_sprint_daily_metrics,
     upsert_sprint_daily_metric,
 )
-from testing_agent.schemas.common import ApiResponse
+from testing_agent.schemas.common import ApiResponse, ListResponse
 from testing_agent.schemas.sprint_daily_metrics import SprintDailyMetricResponse
 
 router = APIRouter()
 
 router.get(
     "/sprints/{sprint_id}/daily-metrics",
-    response_model=ApiResponse[list[SprintDailyMetricResponse]],
+    response_model=ApiResponse[ListResponse[SprintDailyMetricResponse]],
 )(list_sprint_daily_metrics)
 router.get(
     "/sprints/{sprint_id}/daily-metrics/{snapshot_date}",

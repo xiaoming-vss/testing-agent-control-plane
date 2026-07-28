@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from testing_agent.core.errors import ErrForbidden, ErrNotFound
 from testing_agent.core.sid import new_id
 from testing_agent.models.project import Project
@@ -17,7 +19,7 @@ from testing_agent.schemas.ui_run import (
     UiCaseRunResponse,
     UiSuiteRunResponse,
 )
-from testing_agent.services.common import dump
+from testing_agent.services.common import dump, list_payload
 
 
 class UiCaseRunContext:
@@ -181,10 +183,10 @@ class UiTestCaseRunService:
         await self.repository.refresh(run)
         return dump_suite_run(run)
 
-    async def list_suite_runs(self, user_id: str, suite_id: str) -> list[dict]:
+    async def list_suite_runs(self, user_id: str, suite_id: str) -> dict[str, Any]:
         await self.get_owned_suite(user_id, suite_id)
         rows = await self.repository.list_suite_runs(suite_id)
-        return [dump_suite_run(row) for row in rows]
+        return list_payload([dump_suite_run(row) for row in rows])
 
     async def get_suite_run(self, user_id: str, suite_run_id: str) -> dict:
         run = await self.repository.get_suite_run(suite_run_id)

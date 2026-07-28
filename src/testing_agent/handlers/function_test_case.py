@@ -6,7 +6,11 @@ from fastapi import Body, Depends, File, UploadFile
 
 from testing_agent.api.deps import get_current_user_id, get_function_test_case_service
 from testing_agent.core.errors import success_payload
-from testing_agent.schemas.function_test_case import FunctionCaseRequest, FunctionCaseUpdateRequest
+from testing_agent.schemas.function_test_case import (
+    FunctionCaseRequest,
+    FunctionCaseUpdateRequest,
+    ImportFunctionCasesToZentaoRequest,
+)
 from testing_agent.services.function_test_case import FunctionTestCaseService
 
 
@@ -31,7 +35,7 @@ async def import_function_cases(
 
 async def import_function_cases_to_zentao(
     suite_id: str,
-    payload: Any = Body(default=None),
+    payload: ImportFunctionCasesToZentaoRequest = Body(),
     user_id: str = Depends(get_current_user_id),
     service: FunctionTestCaseService = Depends(get_function_test_case_service),
 ):

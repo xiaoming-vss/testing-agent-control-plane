@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from testing_agent.app import create_app
 
 
@@ -146,6 +148,10 @@ def test_missing_go_routes_are_exposed():
         ("PATCH", "/v1/requirement-analysis-runs/{run_id}/stage-output"),
         ("POST", "/v1/requirement-analysis-runs/{run_id}/stage-review"),
         ("POST", "/v1/requirement-analysis-runs/{run_id}/stage-revise"),
+        ("POST", "/v1/projects/{project_id}/test-report-generate-runs"),
+        ("GET", "/v1/projects/{project_id}/test-report-generate-runs"),
+        ("GET", "/v1/test-report-generate-runs/{run_id}"),
+        ("GET", "/v1/test-report-generate-runs/{run_id}/pdf"),
     }
 
     expected = {(method, go_path(path)) for method, path in expected}
@@ -153,3 +159,30 @@ def test_missing_go_routes_are_exposed():
     assert expected <= routes
     assert ("POST", "/v1/requirements/{requirementId}/analysis-runs") not in routes
     assert ("GET", "/v1/requirements/{requirementId}/analysis-runs") not in routes
+
+    forbidden_test_report_task_routes = {
+        ("GET", "/v1/projects/{projectId}/test-report-generate-tasks"),
+        ("POST", "/v1/projects/{projectId}/test-report-generate-tasks"),
+        ("GET", "/v1/test-report-generate-tasks/{taskId}"),
+        ("PATCH", "/v1/test-report-generate-tasks/{taskId}"),
+        ("DELETE", "/v1/test-report-generate-tasks/{taskId}"),
+        ("POST", "/v1/test-report-generate-tasks/{taskId}/run"),
+        ("GET", "/v1/test-report-generate-tasks/{taskId}/runs"),
+        ("GET", "/v1/test-report-generate-task-runs/{runId}"),
+    }
+    leaked = sorted(route for route in forbidden_test_report_task_routes if route in routes)
+    assert leaked == []
+
+
+def test_v1_routes_do_not_return_bare_list_response_models():
+    router_root = Path("src/testing_agent/routers")
+    offenders = []
+    for router_path in router_root.glob("*.py"):
+        text = router_path.read_text(encoding="utf-8")
+        if "ApiResponse[list[" in text:
+            offenders.append(str(router_path))
+
+    assert offenders == []
+
+
+

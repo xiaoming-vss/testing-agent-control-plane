@@ -139,7 +139,8 @@ def test_project_skill_list_endpoint_keeps_success_envelope():
     assert response.status_code == 200
     assert response.json()["code"] == 0
     assert response.json()["message"] == "ok"
-    assert response.json()["data"][0]["skillSpaceId"] == "skill-1"
+    assert response.json()["data"]["total"] == 1
+    assert response.json()["data"]["items"][0]["skillSpaceId"] == "skill-1"
 
 
 def test_project_skill_download_endpoint_is_public():

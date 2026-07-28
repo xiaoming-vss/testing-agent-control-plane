@@ -20,7 +20,7 @@ from testing_agent.schemas.ai_generate_task import (
     AiGenerateTaskResponse,
     AiGenerateTaskRunResponse,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.requirement import RequirementResponse
 
 router = APIRouter()
@@ -31,7 +31,7 @@ router.post(
 )(create_requirement_analysis_task)
 router.get(
     "/projects/{project_id}/requirement-analysis-tasks",
-    response_model=ApiResponse[list[AiGenerateTaskResponse]],
+    response_model=ApiResponse[ListResponse[AiGenerateTaskResponse]],
 )(list_requirement_analysis_tasks)
 router.get(
     "/requirement-analysis-tasks/{task_id}",
@@ -51,7 +51,7 @@ router.post(
 )(run_requirement_analysis_task)
 router.get(
     "/requirement-analysis-tasks/{task_id}/runs",
-    response_model=ApiResponse[list[AiGenerateTaskRunResponse]],
+    response_model=ApiResponse[ListResponse[AiGenerateTaskRunResponse]],
 )(list_requirement_analysis_task_runs)
 router.get(
     "/requirement-analysis-runs/{run_id}",

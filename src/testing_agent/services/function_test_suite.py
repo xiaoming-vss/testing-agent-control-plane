@@ -8,7 +8,7 @@ from testing_agent.core.sid import new_id
 from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.repositories.function_test_suite import FunctionTestSuiteRepository
 from testing_agent.schemas.function_test_suite import FunctionSuiteRequest, FunctionSuiteResponse
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 
 class FunctionTestSuiteService:
@@ -48,10 +48,10 @@ class FunctionTestSuiteService:
         await self.repository.refresh(suite)
         return dump(FunctionSuiteResponse, suite)
 
-    async def list(self, user_id: str, requirement_id: str) -> list[dict]:
+    async def list(self, user_id: str, requirement_id: str) -> dict[str, Any]:
         await self.ensure_requirement_owner(user_id, requirement_id)
         rows = await self.repository.list_by_requirement(requirement_id)
-        return [dump(FunctionSuiteResponse, row) for row in rows]
+        return list_payload([dump(FunctionSuiteResponse, row) for row in rows])
 
     async def get(self, user_id: str, suite_id: str) -> dict:
         return dump(FunctionSuiteResponse, await self.get_owned_entity(user_id, suite_id))

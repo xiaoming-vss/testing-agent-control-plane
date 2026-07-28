@@ -8,14 +8,14 @@ from testing_agent.handlers.project_skill_space import (
     download_project_skill,
     list_project_skills,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.project_skill_space import ProjectSkillSpaceResponse
 
 router = APIRouter()
 
 router.get(
     "/projects/{project_id}/skills",
-    response_model=ApiResponse[list[ProjectSkillSpaceResponse]],
+    response_model=ApiResponse[ListResponse[ProjectSkillSpaceResponse]],
 )(list_project_skills)
 router.post(
     "/projects/{project_id}/skills",

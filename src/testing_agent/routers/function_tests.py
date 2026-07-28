@@ -18,7 +18,7 @@ from testing_agent.handlers.function_test_suite import (
     list_function_suites,
     update_function_suite,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.function_test_case import (
     FunctionCaseImportResponse,
     FunctionCaseResponse,
@@ -34,7 +34,7 @@ router.post(
 )(create_function_suite)
 router.get(
     "/requirements/{requirement_id}/function-test-suites",
-    response_model=ApiResponse[list[FunctionSuiteResponse]],
+    response_model=ApiResponse[ListResponse[FunctionSuiteResponse]],
 )(list_function_suites)
 router.get(
     "/function-test-suites/{suite_id}",
@@ -64,7 +64,7 @@ router.post(
 )
 router.get(
     "/function-test-suites/{suite_id}/cases",
-    response_model=ApiResponse[list[FunctionCaseResponse]],
+    response_model=ApiResponse[ListResponse[FunctionCaseResponse]],
 )(list_function_cases)
 router.get(
     "/function-test-cases/{case_id}",
@@ -78,3 +78,5 @@ router.delete(
     "/function-test-cases/{case_id}",
     response_model=ApiResponse[EmptyData],
 )(delete_function_case)
+
+

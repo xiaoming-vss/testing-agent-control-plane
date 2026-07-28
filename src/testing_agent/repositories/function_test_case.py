@@ -9,6 +9,7 @@ from testing_agent.models.function_test_case import FunctionTestCase
 from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.models.project import Project
 from testing_agent.models.requirement import Requirement
+from testing_agent.models.resource_binding import ResourceBinding
 from testing_agent.models.sprint import Sprint
 
 
@@ -62,6 +63,23 @@ class FunctionTestCaseRepository:
                     .order_by(FunctionTestCase.order_no)
                 )
             ).all()
+        )
+
+    async def get_active_binding(
+        self,
+        resource_type: str,
+        resource_id: str,
+    ) -> ResourceBinding | None:
+        return await self.session.scalar(
+            select(ResourceBinding)
+            .where(
+                ResourceBinding.local_resource_type == resource_type,
+                ResourceBinding.local_resource_id == resource_id,
+                ResourceBinding.status == "active",
+                ResourceBinding.deleted_at.is_(None),
+            )
+            .order_by(ResourceBinding.id.asc())
+            .limit(1)
         )
 
     def add(self, case: FunctionTestCase) -> None:

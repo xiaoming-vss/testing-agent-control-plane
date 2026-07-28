@@ -9,7 +9,7 @@ from testing_agent.models.api_extract_rule import ApiExtractRule
 from testing_agent.repositories.api_extract_rule import ApiExtractRuleRepository
 from testing_agent.schemas.api_extract_rule import ApiExtractRuleRequest, ApiExtractRuleResponse
 from testing_agent.services.api_case import ApiCaseService
-from testing_agent.services.common import apply_patch, dump
+from testing_agent.services.common import apply_patch, dump, list_payload
 
 
 class ApiExtractRuleService:
@@ -32,10 +32,10 @@ class ApiExtractRuleService:
         await self.repository.refresh(rule)
         return dump(ApiExtractRuleResponse, rule)
 
-    async def list(self, user_id: str, case_id: str) -> list[dict]:
+    async def list(self, user_id: str, case_id: str) -> dict[str, Any]:
         await self.api_cases.get_owned_context(user_id, case_id)
         rows = await self.repository.list_by_case(case_id)
-        return [dump(ApiExtractRuleResponse, row) for row in rows]
+        return list_payload([dump(ApiExtractRuleResponse, row) for row in rows])
 
     async def get(self, user_id: str, extract_rule_id: str) -> dict:
         return dump(ApiExtractRuleResponse, await self.get_owned_entity(user_id, extract_rule_id))

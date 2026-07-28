@@ -9,6 +9,7 @@ from testing_agent.core.errors import ErrForbidden, ErrNotFound, ErrProjectSkill
 from testing_agent.core.sid import new_id
 from testing_agent.models.project_skill_space import ProjectSkillSpace
 from testing_agent.repositories.project_skill_space import ProjectSkillSpaceRepository
+from testing_agent.services.common import list_payload
 
 
 def dump_skill(skill: ProjectSkillSpace) -> dict[str, Any]:
@@ -45,10 +46,10 @@ class ProjectSkillSpaceService:
         if project.user_id != user_id:
             raise ErrForbidden
 
-    async def list(self, project_id: str, user_id: str) -> list[dict]:
+    async def list(self, project_id: str, user_id: str) -> dict[str, Any]:
         await self.ensure_project_owner(user_id, project_id)
         rows = await self.repository.list(project_id)
-        return [dump_skill(row) for row in rows]
+        return list_payload([dump_skill(row) for row in rows])
 
     async def create(self, project_id: str, body: dict[str, Any] | None, user_id: str) -> dict:
         await self.ensure_project_owner(user_id, project_id)

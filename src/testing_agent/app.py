@@ -35,6 +35,7 @@ from testing_agent.routers.requirements import router as requirements_router
 from testing_agent.routers.resource_bindings import router as resource_bindings_router
 from testing_agent.routers.sprint_metrics import router as sprint_metrics_router
 from testing_agent.routers.sprints import router as sprints_router
+from testing_agent.routers.test_report_ai_tasks import router as test_report_ai_tasks_router
 from testing_agent.routers.ui_runs import router as ui_runs_router
 from testing_agent.routers.ui_tests import router as ui_tests_router
 from testing_agent.routers.ui_worker import router as ui_worker_router
@@ -138,6 +139,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     v1.include_router(api_ai_tasks_router, tags=["API AI Tasks"])
     v1.include_router(function_ai_tasks_router, tags=["Function AI Tasks"])
     v1.include_router(requirement_analysis_runs_router, tags=["Requirement Analysis Tasks"])
+    v1.include_router(test_report_ai_tasks_router, tags=["Test Report AI Tasks"])
     v1.include_router(api_runs_router, tags=["API Runs"])
     v1.include_router(ui_runs_router, tags=["UI Runs"])
     app.include_router(v1)
@@ -153,3 +155,4 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+

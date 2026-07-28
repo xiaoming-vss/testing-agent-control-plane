@@ -53,6 +53,7 @@ from testing_agent.services.ui_test_case import UiTestCaseService
 from testing_agent.services.ui_test_case_run import UiTestCaseRunService
 from testing_agent.services.ui_test_suite import UiTestSuiteService
 from testing_agent.services.worker_task import WorkerTaskService
+from testing_agent.services.zentao_resource import ZentaoResourceClient
 
 
 def get_current_user_id(authorization: Annotated[str | None, Header()] = None) -> str:
@@ -152,8 +153,17 @@ def get_function_test_suite_service(
 
 def get_function_test_case_service(
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> FunctionTestCaseService:
-    return FunctionTestCaseService(FunctionTestCaseRepository(session))
+    zentao_resource_client = ZentaoResourceClient(settings.zentao_service_base_url)
+    return FunctionTestCaseService(
+        FunctionTestCaseRepository(session),
+        IntegrationConnectionService(
+            IntegrationConnectionRepository(session),
+            zentao_resource_client,
+        ),
+        zentao_resource_client,
+    )
 
 
 def get_ui_test_suite_service(
@@ -176,14 +186,26 @@ def get_ui_test_case_run_service(
 
 def get_integration_connection_service(
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> IntegrationConnectionService:
-    return IntegrationConnectionService(IntegrationConnectionRepository(session))
+    return IntegrationConnectionService(
+        IntegrationConnectionRepository(session),
+        ZentaoResourceClient(settings.zentao_service_base_url),
+    )
 
 
 def get_resource_binding_service(
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> ResourceBindingService:
-    return ResourceBindingService(ResourceBindingRepository(session))
+    return ResourceBindingService(
+        ResourceBindingRepository(session),
+        IntegrationConnectionService(
+            IntegrationConnectionRepository(session),
+            ZentaoResourceClient(settings.zentao_service_base_url),
+        ),
+        ZentaoResourceClient(settings.zentao_service_base_url),
+    )
 
 
 def get_project_skill_space_service(
@@ -194,17 +216,40 @@ def get_project_skill_space_service(
 
 def get_sprint_daily_metrics_service(
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> SprintDailyMetricsService:
-    return SprintDailyMetricsService(SprintDailyMetricsRepository(session))
+    zentao_resource_client = ZentaoResourceClient(settings.zentao_service_base_url)
+    return SprintDailyMetricsService(
+        SprintDailyMetricsRepository(session),
+        IntegrationConnectionService(
+            IntegrationConnectionRepository(session),
+            zentao_resource_client,
+        ),
+        zentao_resource_client,
+    )
 
 
 def get_ai_generate_task_service(
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> AiGenerateTaskService:
-    return AiGenerateTaskService(AiGenerateTaskRepository(session))
+    zentao_resource_client = ZentaoResourceClient(settings.zentao_service_base_url)
+    return AiGenerateTaskService(
+        AiGenerateTaskRepository(session),
+        SprintDailyMetricsService(
+            SprintDailyMetricsRepository(session),
+            IntegrationConnectionService(
+                IntegrationConnectionRepository(session),
+                zentao_resource_client,
+            ),
+            zentao_resource_client,
+        ),
+    )
 
 
 def get_worker_task_service(
     session: AsyncSession = Depends(get_session),
 ) -> WorkerTaskService:
     return WorkerTaskService(WorkerTaskRepository(session))
+
+

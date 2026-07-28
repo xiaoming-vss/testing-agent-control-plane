@@ -23,6 +23,7 @@ from testing_agent.repositories.api_case import ApiCaseRepository
 from testing_agent.schemas.api_case import ApiCaseRequest, ApiCaseResponse
 from testing_agent.schemas.api_run import ApiCaseRunResponse, RunApiCaseRequest
 from testing_agent.services.api_request_render import render_api_case_request
+from testing_agent.services.common import list_payload
 
 
 def dump(schema: type, obj: Any) -> dict[str, Any]:
@@ -148,10 +149,10 @@ class ApiCaseService:
         await self.repository.refresh(api_case)
         return dump(ApiCaseResponse, api_case)
 
-    async def list_by_collection(self, user_id: str, collection_id: str) -> list[dict]:
+    async def list_by_collection(self, user_id: str, collection_id: str) -> dict[str, Any]:
         await self.get_owned_collection(user_id, collection_id)
         rows = await self.repository.list_cases(collection_id)
-        return [dump(ApiCaseResponse, row) for row in rows]
+        return list_payload([dump(ApiCaseResponse, row) for row in rows])
 
     async def get(self, user_id: str, case_id: str) -> dict:
         context = await self.get_owned_context(user_id, case_id)

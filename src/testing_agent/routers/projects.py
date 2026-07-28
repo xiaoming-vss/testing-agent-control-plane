@@ -9,13 +9,13 @@ from testing_agent.handlers.project import (
     list_projects,
     update_project,
 )
-from testing_agent.schemas.common import ApiResponse, EmptyData
+from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 from testing_agent.schemas.project import ProjectResponse
 
 router = APIRouter()
 
 router.post("/projects", response_model=ApiResponse[ProjectResponse])(create_project)
-router.get("/projects", response_model=ApiResponse[list[ProjectResponse]])(list_projects)
+router.get("/projects", response_model=ApiResponse[ListResponse[ProjectResponse]])(list_projects)
 router.get("/projects/{project_id}", response_model=ApiResponse[ProjectResponse])(
     get_project
 )

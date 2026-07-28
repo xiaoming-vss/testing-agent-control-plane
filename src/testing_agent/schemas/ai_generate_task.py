@@ -64,6 +64,35 @@ class RequirementAnalysisTaskRequest(BaseModel):
     )
 
 
+class TestReportGenerateTaskRequest(BaseModel):
+    name: str | None = None
+    sprint_id: str | None = Field(default=None, alias="sprintId")
+    instruction: str | None = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="allow",
+        json_schema_extra={"additionalProperties": False},
+    )
+
+
+class TestReportGenerateTaskRunRequest(BaseModel):
+    sprint_id: str | None = Field(default=None, alias="sprintId")
+    connection_id: str | None = Field(default=None, alias="connectionId")
+    llm_connection_id: str | None = Field(default=None, alias="llmConnectionId")
+    trigger_type: str | None = Field(default=None, alias="triggerType")
+    snapshot_date: str | None = Field(default=None, alias="snapshotDate")
+    instruction: str | None = None
+    config_json: Any | None = Field(default=None, alias="configJson")
+    result_yaml: str | None = Field(default=None, alias="resultYaml")
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="allow",
+        json_schema_extra={"additionalProperties": False},
+    )
+
+
 class AiGenerateTaskReviewRequest(BaseModel):
     action: str | None = None
     review_status: str | None = Field(default=None, alias="reviewStatus")
@@ -124,3 +153,5 @@ class AiGenerateTaskRunResponse(BaseModel):
     duration_ms: int = Field(alias="durationMs")
 
     model_config = ConfigDict(populate_by_name=True)
+
+

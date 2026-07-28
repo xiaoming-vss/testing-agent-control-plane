@@ -19,6 +19,7 @@ dependencies = [
     "httpx>=0.28.0",
     "python-multipart>=0.0.20",
     "pyyaml>=6.0.2",
+    "reportlab>=4.2.0",
     "cryptography>=44.0.0",
     "jsonpath-ng>=1.7.0",
 ]

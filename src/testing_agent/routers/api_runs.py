@@ -14,7 +14,7 @@ from testing_agent.schemas.api_run import (
     ApiCollectionRunReportResponse,
     ApiCollectionRunResponse,
 )
-from testing_agent.schemas.common import ApiResponse
+from testing_agent.schemas.common import ApiResponse, ListResponse
 
 router = APIRouter()
 
@@ -30,7 +30,7 @@ router.post(
 )(run_api_collection)
 router.get(
     "/api-collections/{collection_id}/runs",
-    response_model=ApiResponse[list[ApiCollectionRunResponse]],
+    response_model=ApiResponse[ListResponse[ApiCollectionRunResponse]],
 )(list_api_collection_runs)
 router.get(
     "/api-collection-runs/{collection_run_id}",
