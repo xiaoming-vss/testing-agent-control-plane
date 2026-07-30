@@ -79,7 +79,8 @@ class FakeSprintDailyMetricsRepository:
 
 
 class FakeIntegrationConnectionService:
-    async def resolve_zentao_access(self, user_id, connection_id):
+    async def resolve_zentao_access(self, user_id, connection_id, project_id=""):
+        assert project_id in {"", "p1"}
         return SimpleNamespace(connection_id=connection_id)
 
 
@@ -99,7 +100,7 @@ class FakeZentaoResourceClient:
     async def list_execution_bugs(self, connection, remote_execution_id, page, page_size):
         assert remote_execution_id == "101"
         return {
-            "total": 2,
+            "total": 3,
             "items": [
                 {
                     "title": "登录失败",
@@ -116,6 +117,14 @@ class FakeZentaoResourceClient:
                     "status": "active",
                     "assignedTo": "tester-b",
                     "desc": "表格列宽异常",
+                },
+                {
+                    "title": "导出失败",
+                    "module": "报表模块",
+                    "severity": 3,
+                    "status": "closed",
+                    "openedBy": "tester-c",
+                    "steps": "点击导出后报错",
                 },
             ],
         }
@@ -157,12 +166,13 @@ async def test_sprint_daily_metrics_upsert_builds_snapshot_from_sources():
         "failed": 1,
     }
     assert result["bug"] == {
-        "total": 2,
-        "resolved": 1,
+        "total": 3,
+        "resolved": 2,
+        "closed": 1,
         "unresolved": 1,
         "fatal": 1,
         "serious": 0,
-        "normal": 0,
+        "normal": 1,
         "suggestion": 1,
     }
     assert result["project"] == {
@@ -196,6 +206,14 @@ async def test_sprint_daily_metrics_upsert_builds_snapshot_from_sources():
             "owner": "tester-b",
             "description": "表格列宽异常",
         },
+        {
+            "title": "导出失败",
+            "module": "报表模块",
+            "severity": "一般",
+            "status": "closed",
+            "owner": "tester-c",
+            "description": "点击导出后报错",
+        },
     ]
     assert "metrics" not in result
 
@@ -225,6 +243,7 @@ async def test_sprint_daily_metrics_get_returns_detail_context():
         ui_case_failed=1,
         bug_total=4,
         bug_resolved=2,
+        bug_closed=1,
         bug_unresolved=2,
         bug_fatal=1,
         bug_serious=1,

@@ -13,6 +13,7 @@ from testing_agent.schemas.sprint import (
     SprintResponse,
 )
 from testing_agent.schemas.ui_run import UiCaseRunResponse
+from testing_agent.schemas.ui_test_suite import UiSuiteRequest, UiSuiteResponse
 from testing_agent.schemas.workers import (
     WorkerClaimRequest,
     WorkerProgressRequest,
@@ -176,6 +177,27 @@ def test_ui_run_response_uses_snapshot_and_step_results_fields():
     assert "stepResults" in payload
     assert "snapshotJson" not in payload
     assert "stepResultsJson" not in payload
+
+
+def test_ui_suite_screenshot_policy_uses_go_field():
+    request = UiSuiteRequest(
+        name="UI Suite",
+        screenshotPolicy="after_each_step",
+    )
+
+    assert request.screenshot_policy == "after_each_step"
+
+    payload = UiSuiteResponse(
+        suiteId="suite1",
+        requirementId="req1",
+        name="UI Suite",
+        screenshotPolicy="never",
+        createdAt="2026-01-01T00:00:00Z",
+        updatedAt="2026-01-01T00:00:01Z",
+    ).model_dump(by_alias=True)
+
+    assert payload["screenshotPolicy"] == "never"
+    assert "screenshot_policy" not in payload
 
 
 def test_worker_event_accepts_api_complete_fields_from_go_contract():
@@ -343,11 +365,12 @@ def test_integration_binding_and_metric_dump_match_go_contract():
         ui_case_failed=15,
         bug_total=16,
         bug_resolved=17,
-        bug_unresolved=18,
-        bug_fatal=19,
-        bug_serious=20,
-        bug_normal=21,
-        bug_suggestion=22,
+        bug_closed=18,
+        bug_unresolved=19,
+        bug_fatal=20,
+        bug_serious=21,
+        bug_normal=22,
+        bug_suggestion=23,
         created_at=None,
         updated_at=None,
     )
@@ -359,5 +382,6 @@ def test_integration_binding_and_metric_dump_match_go_contract():
         "success": 4,
         "failed": 5,
     }
-    assert dumped_metric["bug"]["suggestion"] == 22
+    assert dumped_metric["bug"]["closed"] == 18
+    assert dumped_metric["bug"]["suggestion"] == 23
     assert "functionCaseTotal" not in dumped_metric

@@ -207,6 +207,7 @@ class FunctionTestCaseService:
         connection = await self.integration_connection_service.resolve_zentao_access(
             user_id,
             project_binding.connection_id,
+            project.project_id,
         )
         try:
             result = await self.zentao_resource_client.create_test_cases(connection, create_body)
@@ -376,4 +377,3 @@ def item_value(item: Any, key: str, *, default: Any = "") -> Any:
     if isinstance(item, dict):
         return item.get(key, default)
     return getattr(item, key, default)
-

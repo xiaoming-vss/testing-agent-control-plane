@@ -5,6 +5,7 @@ from typing import Any
 
 from testing_agent.core.errors import (
     ErrBadRequest,
+    ErrForbidden,
     ErrIntegrationConnectionAuthFailed,
     ErrNotFound,
     ErrZentaoRemoteResourceUnavailable,
@@ -24,6 +25,7 @@ def dump_connection(connection: IntegrationConnection) -> dict[str, Any]:
     model_id = extra.get("modelId") or extra.get("model_id") or secret.get("modelId") or ""
     return {
         "connectionId": connection.connection_id,
+        "projectId": getattr(connection, "project_id", ""),
         "provider": connection.provider,
         "name": connection.name,
         "baseUrl": connection.base_url,
@@ -52,21 +54,34 @@ class IntegrationConnectionService:
         self.zentao_auth_provider = zentao_auth_provider or ZentaoAuthProvider()
 
     async def get_owned(
-        self, user_id: str, provider: str, connection_id: str
+        self, user_id: str, provider: str, connection_id: str, project_id: str = ""
     ) -> IntegrationConnection:
-        connection = await self.repository.get(user_id, provider, connection_id)
+        connection = await self.repository.get(user_id, provider, connection_id, project_id)
         if connection is None:
             raise ErrNotFound
         return connection
 
     async def resolve_zentao_access(
-        self, user_id: str, connection_id: str
+        self, user_id: str, connection_id: str, project_id: str = ""
     ) -> IntegrationConnection:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         await self._ensure_zentao_token(connection)
         return connection
 
-    async def create(self, provider: str, body: dict[str, Any], user_id: str) -> dict:
+    async def ensure_project_owner(self, user_id: str, project_id: str) -> None:
+        if not project_id:
+            return
+        project = await self.repository.get_project(project_id)
+        if project is None:
+            raise ErrNotFound
+        if project.user_id != user_id:
+            raise ErrForbidden
+
+    async def create(
+        self, provider: str, body: dict[str, Any], user_id: str, project_id: str = ""
+    ) -> dict:
+        project_id = str(project_id or body.get("projectId") or body.get("project_id") or "")
+        await self.ensure_project_owner(user_id, project_id)
         if provider == "zentao":
             name = str(body.get("name") or "").strip()
             base_url = str(body.get("baseUrl") or "").strip()
@@ -100,6 +115,7 @@ class IntegrationConnectionService:
             account_value = str(body.get("account") or "")
         connection = IntegrationConnection(
             connection_id=new_id(),
+            project_id=project_id,
             user_id=user_id,
             provider=provider,
             name=name_value,
@@ -119,17 +135,27 @@ class IntegrationConnectionService:
         await self.repository.refresh(connection)
         return dump_connection(connection)
 
-    async def list(self, provider: str, user_id: str) -> dict[str, Any]:
-        rows = await self.repository.list(user_id, provider)
+    async def list(self, provider: str, user_id: str, project_id: str = "") -> dict[str, Any]:
+        await self.ensure_project_owner(user_id, project_id)
+        rows = await self.repository.list(user_id, provider, project_id)
         return list_payload([dump_connection(row) for row in rows])
 
-    async def get(self, provider: str, connection_id: str, user_id: str) -> dict:
-        return dump_connection(await self.get_owned(user_id, provider, connection_id))
+    async def get(
+        self, provider: str, connection_id: str, user_id: str, project_id: str = ""
+    ) -> dict:
+        await self.ensure_project_owner(user_id, project_id)
+        return dump_connection(await self.get_owned(user_id, provider, connection_id, project_id))
 
     async def update(
-        self, provider: str, connection_id: str, body: dict[str, Any], user_id: str
+        self,
+        provider: str,
+        connection_id: str,
+        body: dict[str, Any],
+        user_id: str,
+        project_id: str = "",
     ) -> dict:
-        connection = await self.get_owned(user_id, provider, connection_id)
+        await self.ensure_project_owner(user_id, project_id)
+        connection = await self.get_owned(user_id, provider, connection_id, project_id)
         old_base_url = connection.base_url
         old_account = connection.account
         old_password = self._zentao_password(connection) if provider == "zentao" else ""
@@ -170,8 +196,10 @@ class IntegrationConnectionService:
         connection_id: str,
         body: dict[str, Any] | None,
         user_id: str,
+        project_id: str = "",
     ) -> dict:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        await self.ensure_project_owner(user_id, project_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         connection.status = "active"
         connection.last_auth_at = datetime.now(UTC)
         connection.last_auth_error = ""
@@ -199,8 +227,11 @@ class IntegrationConnectionService:
         await self.repository.refresh(connection)
         return dump_connection(connection)
 
-    async def delete(self, provider: str, connection_id: str, user_id: str) -> dict:
-        connection = await self.get_owned(user_id, provider, connection_id)
+    async def delete(
+        self, provider: str, connection_id: str, user_id: str, project_id: str = ""
+    ) -> dict:
+        await self.ensure_project_owner(user_id, project_id)
+        connection = await self.get_owned(user_id, provider, connection_id, project_id)
         connection.deleted_at = datetime.now(UTC)
         connection.status = "deleted"
         await self.repository.commit()
@@ -211,9 +242,10 @@ class IntegrationConnectionService:
         provider: str,
         connection_id: str,
         user_id: str,
+        project_id: str = "",
         **extra: str,
     ) -> dict:
-        await self.get_owned(user_id, provider, connection_id)
+        await self.get_owned(user_id, provider, connection_id, project_id)
         return {"connectionId": connection_id, **extra, "items": []}
 
     async def list_zentao_projects(
@@ -221,10 +253,11 @@ class IntegrationConnectionService:
         connection_id: str,
         user_id: str,
         *,
+        project_id: str = "",
         page: int = 1,
         page_size: int = 100,
     ) -> dict:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         result = await self._call_zentao(
             self.zentao_resource_client.list_projects,
             connection,
@@ -253,10 +286,11 @@ class IntegrationConnectionService:
         remote_project_id: str,
         user_id: str,
         *,
+        project_id: str = "",
         page: int = 1,
         page_size: int = 100,
     ) -> dict:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         result = await self._call_zentao(
             self.zentao_resource_client.list_project_executions,
             connection,
@@ -294,10 +328,11 @@ class IntegrationConnectionService:
         remote_execution_id: str,
         user_id: str,
         *,
+        project_id: str = "",
         page: int = 1,
         page_size: int = 100,
     ) -> dict:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         result = await self._call_zentao(
             self.zentao_resource_client.list_execution_testtasks,
             connection,
@@ -336,8 +371,9 @@ class IntegrationConnectionService:
         connection_id: str,
         remote_execution_id: str,
         user_id: str,
+        project_id: str = "",
     ) -> dict:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         result = await self._call_zentao(
             self.zentao_resource_client.list_execution_stories,
             connection,
@@ -373,10 +409,11 @@ class IntegrationConnectionService:
         remote_execution_id: str,
         user_id: str,
         *,
+        project_id: str = "",
         page: int = 1,
         page_size: int = 100,
     ) -> dict:
-        connection = await self.get_owned(user_id, "zentao", connection_id)
+        connection = await self.get_owned(user_id, "zentao", connection_id, project_id)
         result = await self._call_zentao(
             self.zentao_resource_client.list_execution_cases,
             connection,

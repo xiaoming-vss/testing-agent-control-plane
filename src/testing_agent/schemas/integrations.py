@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CreateZentaoIntegrationConnectionRequest(BaseModel):
+    project_id: str = Field(default="", alias="projectId")
     name: str
     base_url: str = Field(alias="baseUrl")
     account: str
@@ -25,6 +26,7 @@ class UpdateZentaoIntegrationConnectionRequest(BaseModel):
 
 
 class CreateLLMIntegrationConnectionRequest(BaseModel):
+    project_id: str = Field(default="", alias="projectId")
     name: str
     base_url: str = Field(alias="baseUrl")
     model_id: str = Field(alias="modelId")
@@ -44,6 +46,7 @@ class UpdateLLMIntegrationConnectionRequest(BaseModel):
 
 class IntegrationConnectionResponse(BaseModel):
     connection_id: str = Field(alias="connectionId")
+    project_id: str = Field(default="", alias="projectId")
     provider: str
     name: str
     base_url: str = Field(alias="baseUrl")

@@ -972,3 +972,45 @@ async def test_ui_case_payload_serializes_steps_json_for_worker():
     payload = await worker_service_module.ui_case_payload(FakeSession(), "case-1")
 
     assert payload["stepsJson"] == '[{"keyword":"goto","url":"https://example.test"}]'
+
+
+def test_ui_suite_payload_includes_screenshot_policy_for_worker():
+    payload = worker_service_module.ui_suite_payload(
+        SimpleNamespace(
+            suite_id="suite-1",
+            name="Login Suite",
+            headless=True,
+            slow_mo_ms=100,
+            viewport_width=1440,
+            viewport_height=900,
+            default_step_timeout_ms=30000,
+            screenshot_policy="after_each_step",
+        )
+    )
+
+    assert payload == {
+        "suiteId": "suite-1",
+        "name": "Login Suite",
+        "headless": True,
+        "slowMoMs": 100,
+        "viewportWidth": 1440,
+        "viewportHeight": 900,
+        "defaultStepTimeoutMs": 30000,
+        "screenshotPolicy": "after_each_step",
+    }
+
+
+def test_ui_suite_payload_defaults_screenshot_policy_for_worker():
+    payload = worker_service_module.ui_suite_payload(
+        SimpleNamespace(
+            suite_id="suite-1",
+            name="Login Suite",
+            headless=None,
+            slow_mo_ms=None,
+            viewport_width=None,
+            viewport_height=None,
+            default_step_timeout_ms=None,
+        )
+    )
+
+    assert payload["screenshotPolicy"] == "on_failure"

@@ -25,7 +25,10 @@ from testing_agent.services import ai_generate_task as ai_tasks
 from testing_agent.services import api_collection, worker
 from testing_agent.services.api_case import ApiCaseService
 from testing_agent.services.api_collection_run import ApiCollectionRunService
-from testing_agent.services.api_request_render import render_api_case_request
+from testing_agent.services.api_request_render import (
+    api_case_request_template,
+    render_api_case_request,
+)
 from testing_agent.services.integration_connection import IntegrationConnectionService
 from testing_agent.services.resource_binding import ResourceBindingService
 from testing_agent.services.zentao_auth import ZentaoAuthProvider
@@ -88,7 +91,7 @@ class FakeResourceBindingRepository:
 
 
 class FakeIntegrationConnectionService:
-    async def get_owned(self, user_id, provider, connection_id):
+    async def get_owned(self, user_id, provider, connection_id, project_id=""):
         assert user_id == "user-1"
         assert provider == "zentao"
         assert connection_id == "conn-1"
@@ -115,7 +118,7 @@ class FakeZentaoResourceClient:
 
 
 class FakeIntegrationRepositoryForZentaoBrowse:
-    async def get(self, user_id, provider, connection_id):
+    async def get(self, user_id, provider, connection_id, project_id=""):
         assert user_id == "user-1"
         assert provider == "zentao"
         assert connection_id == "conn-1"
@@ -257,7 +260,7 @@ class FakeIntegrationRepositoryForConnectionAuth:
         self.rows = []
         self.commits = 0
 
-    async def get(self, user_id, provider, connection_id):
+    async def get(self, user_id, provider, connection_id, project_id=""):
         return next(
             (
                 row
@@ -270,7 +273,7 @@ class FakeIntegrationRepositoryForConnectionAuth:
             None,
         )
 
-    async def list(self, user_id, provider):
+    async def list(self, user_id, provider, project_id=""):
         return [
             row
             for row in self.rows
@@ -359,6 +362,60 @@ async def test_create_zentao_connection_authenticates_and_stores_token(monkeypat
     assert repository.rows[0].last_auth_at is not None
     assert result["connectionId"] == "connection-1"
     assert result["hasAccessToken"] is True
+
+
+@pytest.mark.asyncio
+async def test_integration_connections_are_scoped_by_project(monkeypatch):
+    ids = iter(["connection-1"])
+    monkeypatch.setattr("testing_agent.services.integration_connection.new_id", lambda: next(ids))
+    repository = FakeIntegrationRepositoryForConnectionAuth()
+    repository.project = SimpleNamespace(project_id="project-1", user_id="user-1")
+
+    async def get_project(project_id):
+        assert project_id == "project-1"
+        return repository.project
+
+    async def scoped_list(user_id, provider, project_id=""):
+        return [
+            row
+            for row in repository.rows
+            if row.user_id == user_id
+            and row.provider == provider
+            and row.project_id == project_id
+            and row.deleted_at is None
+        ]
+
+    repository.get_project = get_project
+    repository.list = scoped_list
+    service = IntegrationConnectionService(repository)
+
+    result = await service.create(
+        "llm",
+        {
+            "name": "LLM",
+            "baseUrl": "https://llm.example",
+            "modelId": "gpt",
+            "apiKey": "key",
+        },
+        "user-1",
+        "project-1",
+    )
+    repository.rows.append(
+        SimpleNamespace(
+            connection_id="connection-other",
+            project_id="project-2",
+            user_id="user-1",
+            provider="llm",
+            name="Other",
+            deleted_at=None,
+        )
+    )
+
+    listed = await service.list("llm", "user-1", "project-1")
+
+    assert result["projectId"] == "project-1"
+    assert repository.rows[0].project_id == "project-1"
+    assert [item["connectionId"] for item in listed["items"]] == ["connection-1"]
 
 
 @pytest.mark.asyncio
@@ -819,7 +876,7 @@ async def test_update_llm_connection_model_id_replaces_json_payload_for_persiste
     )
 
     class FakeRepository:
-        async def get(self, user_id, provider, connection_id):
+        async def get(self, user_id, provider, connection_id, project_id=""):
             assert user_id == "user-1"
             assert provider == "llm"
             assert connection_id == "conn-1"
@@ -2867,6 +2924,32 @@ def test_api_case_request_render_matches_go_worker_snapshot_contract():
         "token": "secret",
         "keyword": "demo",
         "enabled": "true",
+    }
+
+
+def test_api_case_request_template_preserves_runtime_placeholders():
+    api_case = SimpleNamespace(
+        method="GET",
+        url_template="/profile",
+        headers_json={"Authorization": "Bearer {{token}}"},
+        query_json={"tenant": "{{tenant}}"},
+        body_type="none",
+        body_json=None,
+        body_text="",
+        timeout_ms=3000,
+    )
+    environment = SimpleNamespace(base_url="https://api.example.test/{{tenant}}")
+
+    assert api_case_request_template(api_case, environment) == {
+        "method": "GET",
+        "baseUrl": "https://api.example.test/{{tenant}}",
+        "urlTemplate": "/profile",
+        "headersJson": '{"Authorization":"Bearer {{token}}"}',
+        "queryJson": '{"tenant":"{{tenant}}"}',
+        "bodyType": "none",
+        "bodyJson": "",
+        "bodyText": "",
+        "timeoutMs": 3000,
     }
 
 

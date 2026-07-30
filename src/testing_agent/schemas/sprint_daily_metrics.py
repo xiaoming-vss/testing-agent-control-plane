@@ -16,6 +16,7 @@ class TestMetricGroup(BaseModel):
 class BugMetricGroup(BaseModel):
     total: int = 0
     resolved: int = 0
+    closed: int = 0
     unresolved: int = 0
     fatal: int = 0
     serious: int = 0
@@ -73,6 +74,7 @@ class SprintDailyMetricRequest(BaseModel):
     ui_case_failed: int | None = Field(default=None, alias="uiCaseFailed")
     bug_total: int | None = Field(default=None, alias="bugTotal")
     bug_resolved: int | None = Field(default=None, alias="bugResolved")
+    bug_closed: int | None = Field(default=None, alias="bugClosed")
     bug_unresolved: int | None = Field(default=None, alias="bugUnresolved")
     bug_fatal: int | None = Field(default=None, alias="bugFatal")
     bug_serious: int | None = Field(default=None, alias="bugSerious")

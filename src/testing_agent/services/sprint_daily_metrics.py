@@ -34,6 +34,7 @@ class TestMetrics:
 class BugMetrics:
     total: int = 0
     resolved: int = 0
+    closed: int = 0
     unresolved: int = 0
     fatal: int = 0
     serious: int = 0
@@ -70,6 +71,7 @@ def dump_metric(metric: SprintDailyMetrics) -> dict[str, Any]:
         "bug": {
             "total": metric.bug_total,
             "resolved": metric.bug_resolved,
+            "closed": metric.bug_closed,
             "unresolved": metric.bug_unresolved,
             "fatal": metric.bug_fatal,
             "serious": metric.bug_serious,
@@ -216,6 +218,7 @@ class SprintDailyMetricsService:
         metric.ui_case_failed = ui_metrics.failed
         metric.bug_total = bug_metrics.total
         metric.bug_resolved = bug_metrics.resolved
+        metric.bug_closed = bug_metrics.closed
         metric.bug_unresolved = bug_metrics.unresolved
         metric.bug_fatal = bug_metrics.fatal
         metric.bug_serious = bug_metrics.serious
@@ -291,7 +294,10 @@ class SprintDailyMetricsService:
             items = list_items(result)
             for item in items:
                 metrics.total += 1
-                if is_resolved_bug_status(item_value(item, "status")):
+                status = normalize_status(item_value(item, "status"))
+                if is_closed_bug_status(status):
+                    metrics.closed += 1
+                if is_resolved_bug_status(status):
                     metrics.resolved += 1
                 else:
                     metrics.unresolved += 1
@@ -353,9 +359,13 @@ class SprintDailyMetricsService:
             raise dynamic_error(ErrResourceBindingInvalid, str(exc)) from exc
         if self.integration_connection_service is None or self.zentao_resource_client is None:
             raise ErrZentaoRemoteResourceUnavailable
+        sprint = await self.repository.get_sprint(sprint_id)
+        if sprint is None:
+            raise ErrNotFound
         connection = await self.integration_connection_service.resolve_zentao_access(
             user_id,
             binding.connection_id,
+            sprint.project_id,
         )
         return connection, remote_execution_id
 
@@ -439,6 +449,10 @@ def normalize_status(value: Any) -> str:
 
 def is_resolved_bug_status(status: Any) -> bool:
     return normalize_status(status) in {"resolved", "closed"}
+
+
+def is_closed_bug_status(status: Any) -> bool:
+    return normalize_status(status) == "closed"
 
 
 def item_value(item: Any, *names: str, default: Any = "") -> Any:

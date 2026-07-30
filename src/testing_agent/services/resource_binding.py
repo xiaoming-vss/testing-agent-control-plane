@@ -156,6 +156,7 @@ class ResourceBindingService:
             user_id,
             "zentao",
             connection_id,
+            project_id,
         )
 
         if self.zentao_resource_client is None:

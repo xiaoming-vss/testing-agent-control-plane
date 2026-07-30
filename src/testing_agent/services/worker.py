@@ -29,7 +29,10 @@ from testing_agent.schemas.workers import (
     WorkerClaimRequest,
     WorkerTaskEventRequest,
 )
-from testing_agent.services.api_request_render import render_api_case_request
+from testing_agent.services.api_request_render import (
+    api_case_request_template,
+    render_api_case_request,
+)
 
 LEASE_SECONDS = 30
 
@@ -326,6 +329,15 @@ async def api_case_worker_snapshot(
             request_snapshot = rendered.snapshot
             runtime_vars = rendered.runtime_vars
 
+    api_case = await session.scalar(select(ApiCase).where(ApiCase.case_id == case_id))
+    environment = (
+        await session.scalar(
+            select(ApiEnvironment).where(ApiEnvironment.environment_id == environment_id)
+        )
+        if environment_id
+        else None
+    )
+
     extract_rules = (
         await session.scalars(
             select(ApiExtractRule)
@@ -376,6 +388,13 @@ async def api_case_worker_snapshot(
             for rule in assert_rules
         ],
     }
+    if (
+        api_case
+        and environment
+        and hasattr(api_case, "url_template")
+        and hasattr(environment, "base_url")
+    ):
+        payload["requestTemplate"] = api_case_request_template(api_case, environment)
     collection_run_id = getattr(run, "collection_run_id", "") or task.collection_run_id
     if collection_run_id:
         payload["collectionRunId"] = collection_run_id
@@ -504,14 +523,7 @@ async def build_snapshot(session: AsyncSession, domain: str, task: WorkerTask) -
         ).all()
         payload["suiteRun"] = {
             "suiteRunId": task.run_id,
-            "suite": {
-                "suiteId": suite.suite_id,
-                "name": suite.name,
-                "headless": suite.headless,
-                "slowMoMs": suite.slow_mo_ms,
-            }
-            if suite
-            else {},
+            "suite": ui_suite_payload(suite),
             "snapshot": run.snapshot_json if run else {},
             "items": [
                 {
@@ -530,9 +542,29 @@ async def build_snapshot(session: AsyncSession, domain: str, task: WorkerTask) -
         payload["caseRun"] = {
             "runId": task.run_id,
             "snapshot": run.snapshot_json if run else {},
+            "suite": ui_suite_payload(
+                await session.scalar(
+                    select(UiTestSuite).where(UiTestSuite.suite_id == task.suite_id)
+                )
+            ),
             "case": await ui_case_payload(session, task.case_id),
         }
     return payload
+
+
+def ui_suite_payload(suite: UiTestSuite | Any | None) -> dict[str, Any]:
+    if suite is None:
+        return {}
+    return {
+        "suiteId": suite.suite_id,
+        "name": suite.name,
+        "headless": suite.headless,
+        "slowMoMs": suite.slow_mo_ms,
+        "viewportWidth": suite.viewport_width,
+        "viewportHeight": suite.viewport_height,
+        "defaultStepTimeoutMs": suite.default_step_timeout_ms,
+        "screenshotPolicy": getattr(suite, "screenshot_policy", None) or "on_failure",
+    }
 
 
 async def ui_case_payload(session: AsyncSession, case_id: str) -> dict[str, Any]:

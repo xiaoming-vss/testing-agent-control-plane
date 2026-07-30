@@ -37,6 +37,7 @@ class SprintDailyMetrics(Base):
     ui_case_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bug_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bug_resolved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    bug_closed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bug_unresolved: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bug_fatal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bug_serious: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

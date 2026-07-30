@@ -27,5 +27,8 @@ class UiTestSuite(Base, SoftDeleteMixin):
     viewport_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     viewport_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     default_step_timeout_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    screenshot_policy: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="on_failure"
+    )
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]

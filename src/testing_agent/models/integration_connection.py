@@ -19,6 +19,7 @@ class IntegrationConnection(Base, SoftDeleteMixin):
     )
     id: Mapped[IdPk]
     connection_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False, default="")
     user_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     provider: Mapped[str] = mapped_column(String(30), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)

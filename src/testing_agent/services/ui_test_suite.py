@@ -68,6 +68,7 @@ class UiTestSuiteService:
                 "viewport_width",
                 "viewport_height",
                 "default_step_timeout_ms",
+                "screenshot_policy",
             },
         )
         await self.repository.commit()
@@ -79,4 +80,3 @@ class UiTestSuiteService:
         self.repository.soft_delete(suite, datetime.now(UTC))
         await self.repository.commit()
         return {}
-

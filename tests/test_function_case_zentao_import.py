@@ -90,8 +90,8 @@ class FakeIntegrationConnectionService:
     def __init__(self):
         self.calls = []
 
-    async def resolve_zentao_access(self, user_id, connection_id):
-        self.calls.append((user_id, connection_id))
+    async def resolve_zentao_access(self, user_id, connection_id, project_id=""):
+        self.calls.append((user_id, connection_id, project_id))
         return SimpleNamespace(
             connection_id=connection_id,
             base_url="http://zentao.local",
@@ -137,7 +137,7 @@ async def test_function_case_import_to_zentao_imports_all_cases():
         "remoteCaseId": 101,
         "status": "success",
     }
-    assert integration_service.calls == [("user-1", "conn-1")]
+    assert integration_service.calls == [("user-1", "conn-1", "project-1")]
 
     _, body = zentao_client.calls[0]
     assert body["productID"] == 9

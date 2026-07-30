@@ -56,6 +56,28 @@ def render_api_case_request(
     return RenderedApiCaseRequest(snapshot=snapshot, runtime_vars=dict(variables))
 
 
+def api_case_request_template(api_case: Any, environment: Any) -> dict[str, Any]:
+    body_type = getattr(api_case, "body_type", "json") or "json"
+    headers_json = normalize_json_input(getattr(api_case, "headers_json", None)) or {}
+    query_json = normalize_json_input(getattr(api_case, "query_json", None)) or {}
+    body_json = normalize_json_input(getattr(api_case, "body_json", None))
+    return {
+        "method": getattr(api_case, "method", ""),
+        "baseUrl": getattr(environment, "base_url", ""),
+        "urlTemplate": getattr(api_case, "url_template", ""),
+        "headersJson": json_compact(headers_json),
+        "queryJson": json_compact(query_json),
+        "bodyType": body_type,
+        "bodyJson": (
+            json_compact(body_json)
+            if body_type in {"json", "form"} and body_json is not None
+            else ""
+        ),
+        "bodyText": getattr(api_case, "body_text", ""),
+        "timeoutMs": getattr(api_case, "timeout_ms", 5000),
+    }
+
+
 def json_compact(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
