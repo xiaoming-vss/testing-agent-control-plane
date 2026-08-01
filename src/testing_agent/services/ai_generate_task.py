@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import posixpath
+import stat
+import zipfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 from typing import Any
 
@@ -17,6 +22,7 @@ from testing_agent.core.errors import (
 )
 from testing_agent.core.sid import new_id
 from testing_agent.models.ai_generate_task import AiGenerateTask, ApiCaseGenerateTaskRun
+from testing_agent.models.ai_generate_task_source_archive import AiGenerateTaskSourceArchive
 from testing_agent.models.api_assert_rule import ApiAssertRule
 from testing_agent.models.api_case import ApiCase
 from testing_agent.models.api_extract_rule import ApiExtractRule
@@ -24,6 +30,9 @@ from testing_agent.models.function_test_case import FunctionTestCase
 from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.models.worker_task import WorkerTask
 from testing_agent.repositories.ai_generate_task import AiGenerateTaskRepository
+from testing_agent.repositories.ai_generate_task_source_archive import (
+    AiGenerateTaskSourceArchiveRepository,
+)
 from testing_agent.repositories.sprint_daily_metrics import SprintDailyMetricsRepository
 from testing_agent.schemas.requirement import normalize_document_type
 from testing_agent.services.api_collection import (
@@ -73,6 +82,73 @@ REVISION_INSTRUCTION_FIELD = "revisionInstruction"
 DEFAULT_FUNCTION_CASE_MODULE = "未分组"
 MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH = 180
 
+MAX_SOURCE_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+MAX_SOURCE_ARCHIVE_FILES = 50_000
+
+
+def dump_source_archive(archive: AiGenerateTaskSourceArchive | Any | None) -> dict[str, Any] | None:
+    if archive is None:
+        return None
+    return {
+        "archiveId": archive.archive_id,
+        "filename": archive.filename,
+        "sizeBytes": archive.size_bytes,
+        "sha256": archive.sha256,
+        "uploadedAt": archive.uploaded_at,
+    }
+
+
+def _canonical_archive_path(name: str) -> str:
+    normalized = name.replace("\\", "/")
+    windows_path = PureWindowsPath(name)
+    if (
+        not normalized
+        or "\x00" in normalized
+        or PurePosixPath(normalized).is_absolute()
+        or windows_path.is_absolute()
+        or bool(windows_path.drive)
+    ):
+        raise ErrBadRequest
+    parts = PurePosixPath(normalized).parts
+    if any(part == ".." for part in parts):
+        raise ErrBadRequest
+    canonical = posixpath.normpath(normalized).rstrip("/")
+    if canonical in {"", "."}:
+        raise ErrBadRequest
+    return canonical.casefold()
+
+
+def validate_source_archive(filename: str, content: bytes) -> None:
+    if Path(filename).suffix.casefold() != ".zip":
+        raise ErrBadRequest
+    if len(content) > MAX_SOURCE_ARCHIVE_BYTES:
+        raise ErrBadRequest
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            paths: set[str] = set()
+            file_count = 0
+            total_size = 0
+            for item in archive.infolist():
+                canonical_path = _canonical_archive_path(item.filename)
+                if canonical_path in paths:
+                    raise ErrBadRequest
+                paths.add(canonical_path)
+                unix_mode = item.external_attr >> 16
+                if stat.S_ISLNK(unix_mode):
+                    raise ErrBadRequest
+                if item.is_dir():
+                    continue
+                file_count += 1
+                total_size += item.file_size
+                if (
+                    file_count > MAX_SOURCE_ARCHIVE_FILES
+                    or total_size > MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES
+                ):
+                    raise ErrBadRequest
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError) as exc:
+        raise ErrBadRequest from exc
+
 
 def next_function_case_stage(stage: str) -> str | None:
     return FUNCTION_CASE_NEXT_STAGE.get(stage)
@@ -82,7 +158,9 @@ def next_requirement_analysis_stage(stage: str) -> str | None:
     return REQUIREMENT_ANALYSIS_NEXT_STAGE.get(stage)
 
 
-def dump_task(task: AiGenerateTask) -> dict[str, Any]:
+def dump_task(
+    task: AiGenerateTask, source_archive: AiGenerateTaskSourceArchive | Any | None = None
+) -> dict[str, Any]:
     return {
         "taskId": task.task_id,
         "taskType": task.task_type,
@@ -93,6 +171,7 @@ def dump_task(task: AiGenerateTask) -> dict[str, Any]:
         "creatorUserId": task.creator_user_id,
         "sourceType": task.source_type,
         "sourceContent": task.source_content,
+        "sourceArchive": dump_source_archive(source_archive),
         "instruction": task.instruction,
     }
 
@@ -425,8 +504,18 @@ class AiGenerateTaskService:
         self,
         repository: AiGenerateTaskRepository,
         sprint_daily_metrics_service: SprintDailyMetricsService | None = None,
+        source_archive_storage_root: str | Path | None = None,
     ):
         self.repository = repository
+        if hasattr(repository, "get_source_archive"):
+            self.source_archive_repository = repository
+        else:
+            self.source_archive_repository = AiGenerateTaskSourceArchiveRepository(
+                repository.session
+            )
+        self.source_archive_storage_root = Path(
+            source_archive_storage_root or "storage/ai-generate-task-sources"
+        )
         if sprint_daily_metrics_service is None and hasattr(repository, "session"):
             sprint_daily_metrics_service = SprintDailyMetricsService(
                 SprintDailyMetricsRepository(repository.session)
