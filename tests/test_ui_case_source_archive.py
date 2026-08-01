@@ -257,6 +257,9 @@ def test_archive_rejects_format_and_capacity_limits(tmp_path, monkeypatch):
 
     not_zip = upload_archive(client, task_id, "source.tar", b"not a zip")
     corrupt_zip = upload_archive(client, task_id, "source.zip", b"not a zip")
+    corrupt_member = bytearray(zip_bytes([("bad.txt", b"healthy")]))
+    corrupt_member[corrupt_member.index(b"healthy")] ^= 1
+    corrupt_member_zip = upload_archive(client, task_id, "source.zip", corrupt_member)
 
     compressed = zip_bytes([("a.txt", b"a")])
     monkeypatch.setattr(ai_tasks, "MAX_SOURCE_ARCHIVE_BYTES", len(compressed) - 1)
@@ -282,11 +285,12 @@ def test_archive_rejects_format_and_capacity_limits(tmp_path, monkeypatch):
         for response in (
             not_zip,
             corrupt_zip,
+            corrupt_member_zip,
             too_large,
             expanded_too_large,
             too_many_files,
         )
-    ] == [400, 400, 400, 400, 400]
+    ] == [400, 400, 400, 400, 400, 400]
     assert repository.archive is None
 
 
@@ -410,6 +414,12 @@ def test_worker_downloads_latest_archive_and_current_optional_requirement_docume
     app.dependency_overrides[get_worker_task_service] = lambda: WorkerTaskService(worker_repository)
     worker_client = TestClient(app, raise_server_exceptions=False)
     headers = {"X-Worker-Token": "worker-token"}
+    unauthorized_archive = worker_client.get(
+        f"/internal/ai-worker/tasks/{worker_task.task_id}/source-archive"
+    )
+    unauthorized_document = worker_client.get(
+        f"/internal/ai-worker/tasks/{worker_task.task_id}/requirement-document"
+    )
 
     archive_response = worker_client.get(
         f"/internal/ai-worker/tasks/{worker_task.task_id}/source-archive",
@@ -420,11 +430,36 @@ def test_worker_downloads_latest_archive_and_current_optional_requirement_docume
         headers=headers,
     )
 
+    assert unauthorized_archive.status_code == 401
+    assert unauthorized_document.status_code == 401
     assert archive_response.status_code == 200
     assert archive_response.content == second
     assert "v2.zip" in archive_response.headers["content-disposition"]
     assert document_response.status_code == 200
     assert document_response.content == b"current requirement"
+
+    repository.requirement.document_storage_path = ""
+    repository.requirement.document_content = "inline current requirement"
+    inline_document_response = worker_client.get(
+        f"/internal/ai-worker/tasks/{worker_task.task_id}/requirement-document",
+        headers=headers,
+    )
+
+    assert inline_document_response.status_code == 200
+    assert inline_document_response.content == b"inline current requirement"
+
+    run.task_id = "different-generate-task"
+    wrong_archive = worker_client.get(
+        f"/internal/ai-worker/tasks/{worker_task.task_id}/source-archive",
+        headers=headers,
+    )
+    wrong_document = worker_client.get(
+        f"/internal/ai-worker/tasks/{worker_task.task_id}/requirement-document",
+        headers=headers,
+    )
+
+    assert wrong_archive.status_code == 404
+    assert wrong_document.status_code == 404
 
 
 def test_ui_candidate_can_be_edited_approved_and_then_frozen(tmp_path):

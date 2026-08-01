@@ -302,9 +302,7 @@ async def test_functional_case_worker_can_download_requirement_document(monkeypa
 
     monkeypatch.setattr(worker_task_service_module, "find_task", fake_find_task)
 
-    requirement = await WorkerTaskService(FakeRepository()).requirement_document(
-        "worker-task-1"
-    )
+    requirement = await WorkerTaskService(FakeRepository()).requirement_document("worker-task-1")
 
     assert requirement.document_storage_path.endswith("requirement.docx")
 
@@ -465,9 +463,7 @@ async def test_ai_worker_snapshot_returns_go_style_run_payload():
             "requirementId": "requirement-1",
             "sourceType": "text",
             "sourceContent": "requirement doc",
-            "documentDownloadUrl": (
-                "/internal/ai-worker/tasks/worker-task-1/requirement-document"
-            ),
+            "documentDownloadUrl": ("/internal/ai-worker/tasks/worker-task-1/requirement-document"),
             "instruction": "cover edge cases",
         },
     }
@@ -561,9 +557,7 @@ async def test_ai_worker_snapshot_returns_go_style_requirement_analysis_payload(
             "requirementId": "requirement-1",
             "documentType": "text",
             "sourceContent": "requirement doc",
-            "documentDownloadUrl": (
-                "/internal/ai-worker/tasks/worker-task-1/requirement-document"
-            ),
+            "documentDownloadUrl": ("/internal/ai-worker/tasks/worker-task-1/requirement-document"),
             "instruction": "find ambiguities",
         },
     }
@@ -853,12 +847,13 @@ async def test_api_collection_item_complete_creates_case_run_and_binds_item(monk
     assert case_run.collection_run_id == "collection-run-1"
     assert case_run.case_id == "case-1"
     assert case_run.status == "success"
-    assert case_run.request_snapshot_json == {"method": "GET", "url": "https://api.example.test/ping"}
+    assert case_run.request_snapshot_json == {
+        "method": "GET",
+        "url": "https://api.example.test/ping",
+    }
     assert case_run.response_snapshot_json == {"statusCode": 200, "body": "ok"}
     assert case_run.runtime_vars_json == {"token": "abc"}
-    assert case_run.extract_results_json == [
-        {"success": True, "varKey": "token", "value": "abc"}
-    ]
+    assert case_run.extract_results_json == [{"success": True, "varKey": "token", "value": "abc"}]
     assert case_run.assert_results_json == [{"success": True}]
     assert saved_extract_vars == [
         ("env-1", [{"success": True, "varKey": "token", "value": "abc"}]),
@@ -1014,3 +1009,104 @@ def test_ui_suite_payload_defaults_screenshot_policy_for_worker():
     )
 
     assert payload["screenshotPolicy"] == "on_failure"
+
+
+def test_ui_case_generate_ai_worker_http_lifecycle_and_token_contract():
+    events = []
+
+    class FakeWorkerService:
+        async def claim(self, domain, body):
+            assert domain == "ai"
+            assert body.worker_id == "worker-1"
+            events.append("claim")
+            return {
+                "taskId": "worker-task-1",
+                "taskType": "ui_case_generate",
+                "runId": "run-1",
+                "generateTaskId": "generate-task-1",
+            }
+
+        async def snapshot(self, domain, task_id):
+            assert (domain, task_id) == ("ai", "worker-task-1")
+            events.append("snapshot")
+            return {
+                "taskType": "ui_case_generate",
+                "sourceArchiveDownloadUrl": (
+                    "/internal/ai-worker/tasks/worker-task-1/source-archive"
+                ),
+            }
+
+        async def started(self, domain, task_id, body):
+            assert (domain, task_id, body.worker_id) == (
+                "ai",
+                "worker-task-1",
+                "worker-1",
+            )
+            events.append("started")
+
+        async def heartbeat(self, domain, task_id, body):
+            assert (domain, task_id, body.worker_id) == (
+                "ai",
+                "worker-task-1",
+                "worker-1",
+            )
+            events.append("heartbeat")
+
+        async def progress(self, task_id, body):
+            assert (task_id, body.worker_id, body.current_stage) == (
+                "worker-task-1",
+                "worker-1",
+                "generating",
+            )
+            events.append("progress")
+
+        async def complete(self, domain, task_id, body):
+            assert (domain, task_id, body.worker_id, body.status) == (
+                "ai",
+                "worker-task-1",
+                "worker-1",
+                "success",
+            )
+            events.append("complete")
+
+    app = create_app(worker_settings())
+    app.dependency_overrides[get_worker_task_service] = lambda: FakeWorkerService()
+    app.dependency_overrides[get_settings] = worker_settings
+    client = TestClient(app)
+    headers = {"X-Worker-Token": "worker-token"}
+    event = {"workerId": "worker-1", "taskId": "worker-task-1", "runId": "run-1"}
+
+    unauthorized = client.post("/internal/ai-worker/tasks/claim", json={"workerId": "worker-1"})
+    claimed = client.post(
+        "/internal/ai-worker/tasks/claim", headers=headers, json={"workerId": "worker-1"}
+    )
+    snapshot = client.get("/internal/ai-worker/tasks/worker-task-1/snapshot", headers=headers)
+    started = client.post(
+        "/internal/ai-worker/tasks/worker-task-1/started", headers=headers, json=event
+    )
+    heartbeat_response = client.post(
+        "/internal/ai-worker/tasks/worker-task-1/heartbeat", headers=headers, json=event
+    )
+    progress = client.patch(
+        "/internal/ai-worker/tasks/worker-task-1/progress",
+        headers=headers,
+        json={**event, "currentStage": "generating", "stageStatus": "running"},
+    )
+    completed = client.post(
+        "/internal/ai-worker/tasks/worker-task-1/completed",
+        headers=headers,
+        json={**event, "status": "success", "resultYaml": "cases: []"},
+    )
+
+    assert unauthorized.status_code == 401
+    assert claimed.status_code == 200
+    assert claimed.json()["taskType"] == "ui_case_generate"
+    assert snapshot.status_code == 200
+    assert snapshot.json()["taskType"] == "ui_case_generate"
+    assert [started.status_code, heartbeat_response.status_code, progress.status_code] == [
+        204,
+        204,
+        204,
+    ]
+    assert completed.status_code == 204
+    assert events == ["claim", "snapshot", "started", "heartbeat", "progress", "complete"]

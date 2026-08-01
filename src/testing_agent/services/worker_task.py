@@ -288,7 +288,6 @@ class WorkerTaskService:
             return task
         return await find_task(self.repository.session, "ai", task_id)
 
-
     async def llm_credentials(self, task_id: str) -> dict:
         task = await find_task(self.repository.session, "ai", task_id)
         connection = None
@@ -299,19 +298,20 @@ class WorkerTaskService:
     async def requirement_document(self, task_id: str):
         task = await self._ai_worker_task(task_id)
         if task.task_type not in {
-            "requirement_analysis", "functional_case_generate", "ui_case_generate"
+            "requirement_analysis",
+            "functional_case_generate",
+            "ui_case_generate",
         }:
             raise ErrNotFound
         run = await self.repository.get_ai_run(task.run_id)
         if run is None or not run.requirement_id:
             raise ErrNotFound
-        if (
-            task.task_type == "ui_case_generate"
-            and run.task_id != task.generate_task_id
-        ):
+        if task.task_type == "ui_case_generate" and run.task_id != task.generate_task_id:
             raise ErrNotFound
         requirement = await self.repository.get_requirement(run.requirement_id)
-        if requirement is None or not requirement.document_storage_path:
+        if requirement is None or not (
+            requirement.document_storage_path or requirement.document_content
+        ):
             raise ErrNotFound
         return requirement
 

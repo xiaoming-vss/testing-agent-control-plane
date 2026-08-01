@@ -146,7 +146,10 @@ def validate_source_archive(filename: str, content: bytes) -> None:
                     or total_size > MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES
                 ):
                     raise ErrBadRequest
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError) as exc:
+                with archive.open(item) as member:
+                    while member.read(1024 * 1024):
+                        pass
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError, RuntimeError) as exc:
         raise ErrBadRequest from exc
 
 
@@ -695,8 +698,12 @@ class AiGenerateTaskService:
 
     async def get(self, kind: str, task_id: str, user_id: str) -> dict:
         task = await self.owned_task(user_id, task_id, kind)
-        archive = await self.source_archive_repository.get_source_archive(task.task_id)
-        return dump_task(task, archive if kind == "ui" else None)
+        archive = (
+            await self.source_archive_repository.get_source_archive(task.task_id)
+            if kind == "ui"
+            else None
+        )
+        return dump_task(task, archive)
 
     async def upload_source_archive(
         self, task_id: str, filename: str, content: bytes, user_id: str
@@ -738,7 +745,6 @@ class AiGenerateTaskService:
 
         try:
             await source_repository.commit()
-            await source_repository.refresh(archive)
         except Exception:
             target_path.unlink(missing_ok=True)
             if hasattr(source_repository, "rollback"):
