@@ -43,6 +43,8 @@ from testing_agent.services.test_report_pdf import markdown_to_pdf_bytes
 
 
 def task_type_for(kind: str) -> str:
+    if kind == "ui":
+        return "ui_case_generate"
     if kind == "function":
         return "functional_case_generate"
     if kind == "requirement_analysis":
@@ -484,7 +486,7 @@ class AiGenerateTaskService:
         sprint_id = str(body.get("sprintId") or body.get("sprint_id") or "")
         requirement_id = str(body.get("requirementId") or body.get("requirement_id") or "")
         requirement = None
-        if kind == "requirement_analysis":
+        if kind in {"ui", "requirement_analysis"}:
             if not requirement_id:
                 raise ErrBadRequest
             requirement = await self.repository.get_requirement(requirement_id)
@@ -529,7 +531,9 @@ class AiGenerateTaskService:
             requirement_id=requirement_id,
             creator_user_id=user_id,
             source_type=str(
-                requirement.document_type
+                "source_archive"
+                if kind == "ui"
+                else requirement.document_type
                 if kind == "requirement_analysis" and requirement is not None
                 else (
                     "daily_metrics"
@@ -538,7 +542,9 @@ class AiGenerateTaskService:
                 )
             ),
             source_content=str(
-                requirement.document_content
+                ""
+                if kind == "ui"
+                else requirement.document_content
                 if kind == "requirement_analysis" and requirement is not None
                 else body.get("sourceContent") or body.get("source_content") or ""
             ),
