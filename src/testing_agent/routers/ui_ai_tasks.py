@@ -7,6 +7,7 @@ from testing_agent.handlers.ui_case_generate_task import (
     delete_ui_case_generate_task,
     get_ui_case_generate_task,
     get_ui_case_generate_task_run,
+    import_ui_case_generate_task_run,
     list_ui_case_generate_task_runs,
     list_ui_case_generate_tasks,
     review_ui_case_generate_task_run,
@@ -15,7 +16,11 @@ from testing_agent.handlers.ui_case_generate_task import (
     update_ui_case_generate_task_run_result,
     upload_ui_case_source_archive,
 )
-from testing_agent.schemas.ai_generate_task import AiGenerateTaskResponse, AiGenerateTaskRunResponse
+from testing_agent.schemas.ai_generate_task import (
+    AiGenerateTaskResponse,
+    AiGenerateTaskRunResponse,
+    UiGenerateTaskImportResponse,
+)
 from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 
 router = APIRouter()
@@ -61,3 +66,7 @@ router.post(
     "/ui-case-generate-task-runs/{run_id}/review",
     response_model=ApiResponse[AiGenerateTaskRunResponse],
 )(review_ui_case_generate_task_run)
+router.post(
+    "/ui-case-generate-task-runs/{run_id}/import",
+    response_model=ApiResponse[UiGenerateTaskImportResponse],
+)(import_ui_case_generate_task_run)

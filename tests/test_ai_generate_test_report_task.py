@@ -75,7 +75,6 @@ class FakeRepository:
             row.error_message = row.error_message or ""
             row.result_yaml = row.result_yaml or ""
             row.review_status = row.review_status or "pending"
-            row.imported_collection_id = row.imported_collection_id or ""
             row.reviewer_user_id = row.reviewer_user_id or ""
             row.reviewed_at = row.reviewed_at or None
             row.review_comment = row.review_comment or ""
@@ -120,7 +119,6 @@ def completed_test_report_run(
         result_yaml=result_yaml,
         result_summary_json={},
         review_status="pending",
-        imported_collection_id="",
         reviewer_user_id="",
         reviewed_at=None,
         review_comment="",
@@ -251,7 +249,6 @@ async def test_list_test_report_runs_filters_by_project_sprint_and_task_type():
             result_yaml="report",
             result_summary_json={},
             review_status="pending",
-            imported_collection_id="",
             reviewer_user_id="",
             reviewed_at=None,
             review_comment="",

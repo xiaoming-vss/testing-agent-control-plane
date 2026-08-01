@@ -80,7 +80,6 @@ REQUIREMENT_ANALYSIS_NEXT_STAGE = {
 }
 REVISION_INSTRUCTION_FIELD = "revisionInstruction"
 DEFAULT_FUNCTION_CASE_MODULE = "未分组"
-MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH = 180
 
 MAX_SOURCE_ARCHIVE_BYTES = 100 * 1024 * 1024
 MAX_SOURCE_ARCHIVE_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
@@ -198,7 +197,6 @@ def dump_run(run: ApiCaseGenerateTaskRun) -> dict[str, Any]:
         "resultYaml": run.result_yaml,
         "resultSummaryJson": run.result_summary_json or {},
         "reviewStatus": run.review_status,
-        "importedCollectionId": run.imported_collection_id,
         "importStatus": getattr(run, "import_status", "pending"),
         "importedTargets": getattr(run, "imported_targets", None) or [],
         "importedAt": getattr(run, "imported_at", None),
@@ -438,20 +436,6 @@ def validate_function_candidate_cases(
         names.add(key)
         normalized_cases.append(case)
     return normalized_cases
-
-
-def compact_imported_suite_ids(suite_ids: list[str]) -> str:
-    if not suite_ids:
-        return ""
-    joined = ",".join(suite_ids)
-    if len(joined) <= MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH:
-        return joined
-    summary = f"{suite_ids[0]},+{len(suite_ids) - 1}"
-    if len(summary) <= MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH:
-        return summary
-    if len(suite_ids[0]) <= MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH:
-        return suite_ids[0]
-    return suite_ids[0][:MAX_IMPORTED_SUITE_ID_SUMMARY_LENGTH]
 
 
 def is_ai_run_reviewable(status: str) -> bool:
@@ -1280,7 +1264,6 @@ class AiGenerateTaskService:
             }
 
         old_import_state = (
-            run.imported_collection_id,
             run.import_status,
             run.imported_targets,
             run.imported_at,
@@ -1299,7 +1282,6 @@ class AiGenerateTaskService:
                     self._apply_api_case(target_case, item)
                     await self._replace_api_rules(target_case.case_id, item)
             imported_at = datetime.now(UTC)
-            run.imported_collection_id = collection_id
             run.import_status = "imported"
             run.imported_targets = [{"targetType": "api_collection", "targetId": collection_id}]
             run.imported_at = imported_at
@@ -1308,7 +1290,6 @@ class AiGenerateTaskService:
             await self.repository.refresh(run)
         except Exception:
             (
-                run.imported_collection_id,
                 run.import_status,
                 run.imported_targets,
                 run.imported_at,
@@ -1321,6 +1302,17 @@ class AiGenerateTaskService:
             "conflicts": [],
             "run": dump_run(run),
         }
+
+    async def import_ui_run(
+        self,
+        run_id: str,
+        suite_id: str,
+        confirm_overwrite: bool,
+        user_id: str,
+    ) -> dict[str, Any]:
+        from testing_agent.services.ui_generate_import import import_ui_run
+
+        return await import_ui_run(self, run_id, suite_id, confirm_overwrite, user_id)
 
     async def list_runs(self, kind: str, task_id: str, user_id: str) -> dict[str, Any]:
         await self.owned_task(user_id, task_id, kind)
@@ -1532,11 +1524,9 @@ class AiGenerateTaskService:
                 if not collection_id:
                     raise ErrBadRequest
                 await self.import_generated_api_cases(user_id, run, collection_id)
-                run.imported_collection_id = collection_id
                 run.imported_targets = [{"targetType": "api_collection", "targetId": collection_id}]
             else:
                 suite_ids = await self.import_generated_function_cases(user_id, run)
-                run.imported_collection_id = compact_imported_suite_ids(suite_ids)
                 run.imported_targets = [
                     {"targetType": "function_suite", "targetId": suite_id} for suite_id in suite_ids
                 ]
@@ -1546,7 +1536,6 @@ class AiGenerateTaskService:
             run.review_status = "approved"
         elif action == "reject":
             run.review_status = "rejected"
-            run.imported_collection_id = ""
             run.import_status = "pending"
             run.imported_targets = []
             run.imported_at = None

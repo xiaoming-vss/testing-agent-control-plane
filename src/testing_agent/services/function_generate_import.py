@@ -120,7 +120,6 @@ async def import_function_run(
         }
 
     old_import_state = (
-        run.imported_collection_id,
         run.import_status,
         run.imported_targets,
         run.imported_at,
@@ -166,7 +165,6 @@ async def import_function_run(
             apply_generated_case(new_case, item)
             service.repository.add(new_case)
 
-        run.imported_collection_id = ""
         run.import_status = "imported"
         run.imported_targets = [
             {"targetType": "function_suite", "targetId": target_id} for target_id in target_ids
@@ -177,7 +175,6 @@ async def import_function_run(
         await service.repository.refresh(run)
     except Exception:
         (
-            run.imported_collection_id,
             run.import_status,
             run.imported_targets,
             run.imported_at,

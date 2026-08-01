@@ -97,7 +97,6 @@ class UiTaskRepository:
             row.error_message = ""
             row.result_yaml = ""
             row.review_status = "pending"
-            row.imported_collection_id = ""
             row.import_status = "pending"
             row.imported_targets = []
             row.imported_at = None

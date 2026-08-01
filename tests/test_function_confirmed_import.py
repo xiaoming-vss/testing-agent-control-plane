@@ -44,7 +44,6 @@ def approved_run() -> SimpleNamespace:
 """,
         result_summary_json={},
         review_status="approved",
-        imported_collection_id="",
         import_status="pending",
         imported_targets=[],
         imported_at=None,
@@ -211,7 +210,7 @@ def test_function_import_previews_conflicts_then_overwrites_across_all_suites():
     assert confirmed_data["requiresConfirmation"] is False
     assert confirmed_data["run"]["reviewStatus"] == "approved"
     assert confirmed_data["run"]["importStatus"] == "imported"
-    assert confirmed_data["run"]["importedCollectionId"] == ""
+    assert "importedCollectionId" not in confirmed_data["run"]
     assert confirmed_data["run"]["importedTargets"] == [
         {"targetType": "function_suite", "targetId": "suite-login"},
         {

@@ -26,7 +26,6 @@ def make_run(*, status: str = "success") -> SimpleNamespace:
         result_yaml="cases: []",
         result_summary_json={},
         review_status="pending",
-        imported_collection_id="",
         import_status="pending",
         imported_targets=[],
         imported_at=None,

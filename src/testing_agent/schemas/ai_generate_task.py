@@ -132,6 +132,13 @@ class FunctionGenerateTaskImportRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class UiGenerateTaskImportRequest(BaseModel):
+    suite_id: str = Field(alias="suiteId")
+    confirm_overwrite: bool = Field(default=False, alias="confirmOverwrite")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class SourceArchiveResponse(BaseModel):
     archive_id: str = Field(alias="archiveId")
     filename: str
@@ -183,7 +190,6 @@ class AiGenerateTaskRunResponse(BaseModel):
     result_yaml: str = Field(alias="resultYaml")
     result_summary_json: Any = Field(default_factory=dict, alias="resultSummaryJson")
     review_status: str = Field(alias="reviewStatus")
-    imported_collection_id: str = Field(alias="importedCollectionId")
     import_status: Literal["pending", "imported"] = Field(alias="importStatus")
     imported_targets: list[ImportedTarget] = Field(default_factory=list, alias="importedTargets")
     imported_at: datetime | str | None = Field(default=None, alias="importedAt")
@@ -279,6 +285,31 @@ class FunctionCaseImportConflict(BaseModel):
 class FunctionGenerateTaskImportResponse(BaseModel):
     requires_confirmation: bool = Field(alias="requiresConfirmation")
     conflicts: list[FunctionCaseImportConflict] = Field(default_factory=list)
+    run: AiGenerateTaskRunResponse
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UiCaseComparison(BaseModel):
+    name: str
+    enabled: bool
+    order_no: int = Field(alias="orderNo")
+    steps_json: Any = Field(alias="stepsJson")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UiCaseImportConflict(BaseModel):
+    normalized_name: str = Field(alias="normalizedName")
+    existing_case: UiCaseComparison = Field(alias="existingCase")
+    generated_case: UiCaseComparison = Field(alias="generatedCase")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UiGenerateTaskImportResponse(BaseModel):
+    requires_confirmation: bool = Field(alias="requiresConfirmation")
+    conflicts: list[UiCaseImportConflict] = Field(default_factory=list)
     run: AiGenerateTaskRunResponse
 
     model_config = ConfigDict(populate_by_name=True)

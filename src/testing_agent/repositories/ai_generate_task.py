@@ -13,6 +13,8 @@ from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.models.project import Project
 from testing_agent.models.requirement import Requirement
 from testing_agent.models.sprint import Sprint
+from testing_agent.models.ui_test_case import UiTestCase
+from testing_agent.models.ui_test_suite import UiTestSuite
 from testing_agent.models.worker_task import WorkerTask
 
 
@@ -227,6 +229,31 @@ class AiGenerateTaskRepository:
             )
         )
         return int(value or 0)
+
+    async def get_ui_suite(self, suite_id: str) -> UiTestSuite | None:
+        return await self.session.scalar(
+            select(UiTestSuite)
+            .where(
+                UiTestSuite.suite_id == suite_id,
+                UiTestSuite.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+
+    async def list_ui_cases(self, suite_id: str) -> list[UiTestCase]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(UiTestCase)
+                    .where(
+                        UiTestCase.suite_id == suite_id,
+                        UiTestCase.deleted_at.is_(None),
+                    )
+                    .order_by(UiTestCase.order_no, UiTestCase.id)
+                    .with_for_update()
+                )
+            ).all()
+        )
 
     def add(self, row: object) -> None:
         self.session.add(row)

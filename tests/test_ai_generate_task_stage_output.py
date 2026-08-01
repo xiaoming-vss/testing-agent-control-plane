@@ -30,7 +30,6 @@ async def test_function_case_stage_output_persists_config_json():
         result_yaml="old",
         result_summary_json={},
         review_status="pending",
-        imported_collection_id="",
         reviewer_user_id="",
         reviewed_at=None,
         review_comment="",
@@ -172,10 +171,3 @@ async def test_function_case_review_import_matches_go_cases_payload():
     assert created_cases[0].priority == "P2"
     assert created_cases[0].case_type == "集成"
     assert created_cases[0].order_no == 1
-
-
-def test_function_case_imported_suite_ids_are_compacted_like_go():
-    ids = ["s" * 200, "second", "third"]
-
-    assert ai_tasks.compact_imported_suite_ids(ids) == "s" * 180
-    assert ai_tasks.compact_imported_suite_ids(["first", "second"]) == "first,second"

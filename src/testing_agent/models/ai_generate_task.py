@@ -52,9 +52,6 @@ class ApiCaseGenerateTaskRun(Base):
     review_status: Mapped[str] = mapped_column(
         String(20), index=True, nullable=False, default="pending"
     )
-    imported_collection_id: Mapped[str] = mapped_column(
-        String(64), index=True, nullable=False, default=""
-    )
     import_status: Mapped[str] = mapped_column(
         String(20), index=True, nullable=False, default="pending"
     )

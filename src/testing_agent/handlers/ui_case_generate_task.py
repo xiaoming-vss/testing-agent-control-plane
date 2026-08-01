@@ -9,6 +9,7 @@ from testing_agent.schemas.ai_generate_task import (
     AiGenerateTaskResultRequest,
     AiGenerateTaskReviewRequest,
     AiGenerateTaskRunRequest,
+    UiGenerateTaskImportRequest,
 )
 from testing_agent.services.ai_generate_task import (
     MAX_SOURCE_ARCHIVE_BYTES,
@@ -125,4 +126,15 @@ async def review_ui_case_generate_task_run(
         await service.review(
             "ui", run_id, body.model_dump(by_alias=True, exclude_none=True), user_id
         )
+    )
+
+
+async def import_ui_case_generate_task_run(
+    run_id: str,
+    body: UiGenerateTaskImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: AiGenerateTaskService = Depends(get_ai_generate_task_service),
+):
+    return success_payload(
+        await service.import_ui_run(run_id, body.suite_id, body.confirm_overwrite, user_id)
     )

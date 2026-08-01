@@ -28,7 +28,6 @@ def _run(**overrides):
         "result_yaml": "",
         "result_summary_json": {},
         "review_status": "approved",
-        "imported_collection_id": "legacy-target",
         "import_status": "pending",
         "imported_targets": [],
         "imported_at": None,
@@ -54,8 +53,8 @@ def _get_run_detail(run):
     return TestClient(app).get("/v1/api-case-generate-task-runs/run-1")
 
 
-def test_run_detail_exposes_pending_generic_import_state_and_legacy_field():
-    response = _get_run_detail(_run(review_status="pending", imported_collection_id=""))
+def test_run_detail_exposes_only_pending_generic_import_state():
+    response = _get_run_detail(_run(review_status="pending"))
 
     assert response.status_code == 200
     data = response.json()["data"]
@@ -63,7 +62,7 @@ def test_run_detail_exposes_pending_generic_import_state_and_legacy_field():
     assert data["importedTargets"] == []
     assert data["importedAt"] is None
     assert data["importMigrationComplete"] is True
-    assert data["importedCollectionId"] == ""
+    assert "importedCollectionId" not in data
 
 
 def test_run_detail_exposes_multiple_supported_import_target_types():
@@ -84,4 +83,12 @@ def test_run_detail_exposes_multiple_supported_import_target_types():
     assert data["importedTargets"] == targets
     assert data["importedAt"] == "2026-08-01T06:30:00Z"
     assert data["importMigrationComplete"] is True
-    assert data["importedCollectionId"] == "legacy-target"
+    assert "importedCollectionId" not in data
+
+
+def test_openapi_run_contract_omits_legacy_imported_collection_id():
+    app = create_app()
+
+    schema = app.openapi()["components"]["schemas"]["AiGenerateTaskRunResponse"]
+
+    assert "importedCollectionId" not in schema["properties"]
