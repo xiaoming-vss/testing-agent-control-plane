@@ -514,3 +514,48 @@ def test_ui_candidate_can_be_edited_approved_and_then_frozen(tmp_path):
     assert approved.json()["data"]["importStatus"] == "pending"
     assert approved.json()["data"]["importedTargets"] == []
     assert frozen.status_code == 400
+
+
+def test_ui_generation_user_routes_reject_cross_user_access(tmp_path):
+    repository = UiTaskRepository()
+    client, _ = ui_task_client(repository, tmp_path)
+    task_id = create_ui_task(client)
+    assert (
+        upload_archive(client, task_id, "source.zip", zip_bytes([("main.py", b"x")])).status_code
+        == 200
+    )
+    started = client.post(
+        f"/v1/ui-case-generate-tasks/{task_id}/run",
+        json={"connectionId": "llm-1"},
+    )
+    assert started.status_code == 200
+    run_id = started.json()["data"]["runId"]
+
+    client.app.dependency_overrides[get_current_user_id] = lambda: "user-2"
+    responses = [
+        client.post(
+            "/v1/projects/project-1/ui-case-generate-tasks",
+            json={"requirementId": "requirement-1"},
+        ),
+        client.get("/v1/projects/project-1/ui-case-generate-tasks"),
+        client.get(f"/v1/ui-case-generate-tasks/{task_id}"),
+        client.patch(f"/v1/ui-case-generate-tasks/{task_id}", json={"instruction": "foreign"}),
+        client.delete(f"/v1/ui-case-generate-tasks/{task_id}"),
+        upload_archive(client, task_id, "replacement.zip", zip_bytes([("main.py", b"foreign")])),
+        client.post(
+            f"/v1/ui-case-generate-tasks/{task_id}/run",
+            json={"connectionId": "llm-1"},
+        ),
+        client.get(f"/v1/ui-case-generate-tasks/{task_id}/runs"),
+        client.get(f"/v1/ui-case-generate-task-runs/{run_id}"),
+        client.patch(
+            f"/v1/ui-case-generate-task-runs/{run_id}/result",
+            json={"resultYaml": "cases: []"},
+        ),
+        client.post(
+            f"/v1/ui-case-generate-task-runs/{run_id}/review",
+            json={"action": "approve"},
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [403] * len(responses)
