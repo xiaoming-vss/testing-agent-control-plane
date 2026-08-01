@@ -4,8 +4,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from testing_agent.models.ai_generate_task import AiGenerateTask, ApiCaseGenerateTaskRun
+from testing_agent.models.api_assert_rule import ApiAssertRule
 from testing_agent.models.api_case import ApiCase
 from testing_agent.models.api_collection import ApiCollection
+from testing_agent.models.api_extract_rule import ApiExtractRule
 from testing_agent.models.function_test_case import FunctionTestCase
 from testing_agent.models.function_test_suite import FunctionTestSuite
 from testing_agent.models.project import Project
@@ -54,6 +56,46 @@ class AiGenerateTaskRepository:
         )
         return row is not None
 
+    async def list_api_cases(self, collection_id: str) -> list[ApiCase]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(ApiCase).where(
+                        ApiCase.collection_id == collection_id,
+                        ApiCase.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        )
+
+    async def list_api_extract_rules(self, case_id: str) -> list[ApiExtractRule]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(ApiExtractRule)
+                    .where(
+                        ApiExtractRule.case_id == case_id,
+                        ApiExtractRule.deleted_at.is_(None),
+                    )
+                    .order_by(ApiExtractRule.order_no, ApiExtractRule.id)
+                )
+            ).all()
+        )
+
+    async def list_api_assert_rules(self, case_id: str) -> list[ApiAssertRule]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(ApiAssertRule)
+                    .where(
+                        ApiAssertRule.case_id == case_id,
+                        ApiAssertRule.deleted_at.is_(None),
+                    )
+                    .order_by(ApiAssertRule.order_no, ApiAssertRule.id)
+                )
+            ).all()
+        )
+
     async def get_task(self, task_id: str) -> AiGenerateTask | None:
         return await self.session.scalar(
             select(AiGenerateTask).where(
@@ -88,6 +130,7 @@ class AiGenerateTaskRepository:
                 AiGenerateTask.deleted_at.is_(None),
             )
         )
+
     async def list_runs_by_project_sprint_task_type(
         self, project_id: str, sprint_id: str, task_type: str
     ) -> list[ApiCaseGenerateTaskRun]:
@@ -106,9 +149,17 @@ class AiGenerateTaskRepository:
                 )
             ).all()
         )
+
     async def get_run(self, run_id: str) -> ApiCaseGenerateTaskRun | None:
         return await self.session.scalar(
             select(ApiCaseGenerateTaskRun).where(ApiCaseGenerateTaskRun.run_id == run_id)
+        )
+
+    async def get_run_for_update(self, run_id: str) -> ApiCaseGenerateTaskRun | None:
+        return await self.session.scalar(
+            select(ApiCaseGenerateTaskRun)
+            .where(ApiCaseGenerateTaskRun.run_id == run_id)
+            .with_for_update()
         )
 
     async def list_runs(self, task_id: str) -> list[ApiCaseGenerateTaskRun]:
@@ -133,11 +184,13 @@ class AiGenerateTaskRepository:
         self, requirement_id: str, name: str
     ) -> FunctionTestSuite | None:
         return await self.session.scalar(
-            select(FunctionTestSuite).where(
+            select(FunctionTestSuite)
+            .where(
                 FunctionTestSuite.requirement_id == requirement_id,
                 FunctionTestSuite.name == name,
                 FunctionTestSuite.deleted_at.is_(None),
             )
+            .with_for_update()
         )
 
     async def get_function_case_by_suite_and_title(
@@ -149,6 +202,21 @@ class AiGenerateTaskRepository:
                 FunctionTestCase.title == title,
                 FunctionTestCase.deleted_at.is_(None),
             )
+        )
+
+    async def list_function_cases(self, suite_id: str) -> list[FunctionTestCase]:
+        return list(
+            (
+                await self.session.scalars(
+                    select(FunctionTestCase)
+                    .where(
+                        FunctionTestCase.suite_id == suite_id,
+                        FunctionTestCase.deleted_at.is_(None),
+                    )
+                    .order_by(FunctionTestCase.order_no, FunctionTestCase.id)
+                    .with_for_update()
+                )
+            ).all()
         )
 
     async def max_function_case_order_by_suite(self, suite_id: str) -> int:
@@ -166,11 +234,17 @@ class AiGenerateTaskRepository:
     def add_all(self, rows: list[object]) -> None:
         self.session.add_all(rows)
 
+    async def delete(self, row: object) -> None:
+        await self.session.delete(row)
+
+    async def flush(self) -> None:
+        await self.session.flush()
+
+    async def rollback(self) -> None:
+        await self.session.rollback()
+
     async def commit(self) -> None:
         await self.session.commit()
 
     async def refresh(self, row: object) -> None:
         await self.session.refresh(row)
-
-
-

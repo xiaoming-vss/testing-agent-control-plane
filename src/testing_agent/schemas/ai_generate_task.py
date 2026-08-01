@@ -113,6 +113,25 @@ class AiGenerateTaskReviewRequest(BaseModel):
     )
 
 
+class AiGenerateTaskResultRequest(BaseModel):
+    result_yaml: str = Field(alias="resultYaml")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AiGenerateTaskImportRequest(BaseModel):
+    collection_id: str = Field(alias="collectionId")
+    confirm_overwrite: bool = Field(default=False, alias="confirmOverwrite")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FunctionGenerateTaskImportRequest(BaseModel):
+    confirm_overwrite: bool = Field(default=False, alias="confirmOverwrite")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AiGenerateTaskResponse(BaseModel):
     task_id: str = Field(alias="taskId")
     task_type: str = Field(alias="taskType")
@@ -129,9 +148,7 @@ class AiGenerateTaskResponse(BaseModel):
 
 
 class ImportedTarget(BaseModel):
-    target_type: Literal["api_collection", "function_suite", "ui_suite"] = Field(
-        alias="targetType"
-    )
+    target_type: Literal["api_collection", "function_suite", "ui_suite"] = Field(alias="targetType")
     target_id: str = Field(alias="targetId")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -168,3 +185,89 @@ class AiGenerateTaskRunResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ApiCaseExtractRuleComparison(BaseModel):
+    name: str
+    enabled: bool
+    order_no: int = Field(alias="orderNo")
+    source: str
+    source_expr: str = Field(alias="sourceExpr")
+    var_key: str = Field(alias="varKey")
+    default_value: str = Field(alias="defaultValue")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ApiCaseAssertRuleComparison(BaseModel):
+    name: str
+    enabled: bool
+    order_no: int = Field(alias="orderNo")
+    assert_source: str = Field(alias="assertSource")
+    target_expr: str = Field(alias="targetExpr")
+    comparator: str
+    expected_value: str = Field(alias="expectedValue")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ApiCaseComparison(BaseModel):
+    name: str
+    description: str
+    enabled: bool
+    order_no: int = Field(alias="orderNo")
+    method: str
+    url_template: str = Field(alias="urlTemplate")
+    headers: Any
+    query: Any
+    body_type: str = Field(alias="bodyType")
+    body_json: Any = Field(alias="bodyJson")
+    body_text: str = Field(alias="bodyText")
+    timeout_ms: int = Field(alias="timeoutMs")
+    continue_on_failure: bool = Field(alias="continueOnFailure")
+    extract_rules: list[ApiCaseExtractRuleComparison] = Field(alias="extractRules")
+    assert_rules: list[ApiCaseAssertRuleComparison] = Field(alias="assertRules")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ApiCaseImportConflict(BaseModel):
+    normalized_name: str = Field(alias="normalizedName")
+    existing_case: ApiCaseComparison = Field(alias="existingCase")
+    generated_case: ApiCaseComparison = Field(alias="generatedCase")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AiGenerateTaskImportResponse(BaseModel):
+    requires_confirmation: bool = Field(alias="requiresConfirmation")
+    conflicts: list[ApiCaseImportConflict] = Field(default_factory=list)
+    run: AiGenerateTaskRunResponse
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FunctionCaseComparison(BaseModel):
+    module: str
+    title: str
+    preconditions: str
+    steps: str
+    expected_results: str = Field(alias="expectedResults")
+    priority: str
+    case_type: str = Field(alias="caseType")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FunctionCaseImportConflict(BaseModel):
+    normalized_name: str = Field(alias="normalizedName")
+    existing_case: FunctionCaseComparison = Field(alias="existingCase")
+    generated_case: FunctionCaseComparison = Field(alias="generatedCase")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class FunctionGenerateTaskImportResponse(BaseModel):
+    requires_confirmation: bool = Field(alias="requiresConfirmation")
+    conflicts: list[FunctionCaseImportConflict] = Field(default_factory=list)
+    run: AiGenerateTaskRunResponse
+
+    model_config = ConfigDict(populate_by_name=True)

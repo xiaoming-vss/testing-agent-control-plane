@@ -5,7 +5,9 @@ from fastapi import Depends
 from testing_agent.api.deps import get_ai_generate_task_service, get_current_user_id
 from testing_agent.core.errors import success_payload
 from testing_agent.schemas.ai_generate_task import (
+    AiGenerateTaskImportRequest,
     AiGenerateTaskRequest,
+    AiGenerateTaskResultRequest,
     AiGenerateTaskReviewRequest,
     AiGenerateTaskRunRequest,
 )
@@ -109,3 +111,26 @@ async def review_api_case_generate_task_run(
         )
     )
 
+async def update_api_case_generate_task_run_result(
+    run_id: str,
+    body: AiGenerateTaskResultRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: AiGenerateTaskService = Depends(get_ai_generate_task_service),
+):
+    return success_payload(await service.update_result("api", run_id, body.result_yaml, user_id))
+
+
+async def import_api_case_generate_task_run(
+    run_id: str,
+    body: AiGenerateTaskImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: AiGenerateTaskService = Depends(get_ai_generate_task_service),
+):
+    return success_payload(
+        await service.import_api_run(
+            run_id,
+            body.collection_id,
+            body.confirm_overwrite,
+            user_id,
+        )
+    )

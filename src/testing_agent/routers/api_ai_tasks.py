@@ -7,13 +7,16 @@ from testing_agent.handlers.api_case_generate_task import (
     delete_api_case_generate_task,
     get_api_case_generate_task,
     get_api_case_generate_task_run,
+    import_api_case_generate_task_run,
     list_api_case_generate_task_runs,
     list_api_case_generate_tasks,
     review_api_case_generate_task_run,
     run_api_case_generate_task,
     update_api_case_generate_task,
+    update_api_case_generate_task_run_result,
 )
 from testing_agent.schemas.ai_generate_task import (
+    AiGenerateTaskImportResponse,
     AiGenerateTaskResponse,
     AiGenerateTaskRunResponse,
 )
@@ -63,3 +66,11 @@ router.post(
 )(
     review_api_case_generate_task_run
 )
+router.patch(
+    "/api-case-generate-task-runs/{run_id}/result",
+    response_model=ApiResponse[AiGenerateTaskRunResponse],
+)(update_api_case_generate_task_run_result)
+router.post(
+    "/api-case-generate-task-runs/{run_id}/import",
+    response_model=ApiResponse[AiGenerateTaskImportResponse],
+)(import_api_case_generate_task_run)

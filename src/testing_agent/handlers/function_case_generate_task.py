@@ -6,10 +6,13 @@ from testing_agent.api.deps import get_ai_generate_task_service, get_current_use
 from testing_agent.core.errors import success_payload
 from testing_agent.schemas.ai_generate_task import (
     AiGenerateTaskRequest,
+    AiGenerateTaskResultRequest,
     AiGenerateTaskReviewRequest,
     AiGenerateTaskRunRequest,
+    FunctionGenerateTaskImportRequest,
 )
 from testing_agent.services.ai_generate_task import AiGenerateTaskService, dump_run
+from testing_agent.services.function_generate_import import import_function_run
 
 
 async def create_function_case_generate_task(
@@ -138,3 +141,29 @@ async def review_function_case_generate_task_run(
         )
     )
 
+
+async def update_function_case_generate_task_run_result(
+    run_id: str,
+    body: AiGenerateTaskResultRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: AiGenerateTaskService = Depends(get_ai_generate_task_service),
+):
+    return success_payload(
+        await service.update_result("function", run_id, body.result_yaml, user_id)
+    )
+
+
+async def import_function_case_generate_task_run(
+    run_id: str,
+    body: FunctionGenerateTaskImportRequest | None = None,
+    user_id: str = Depends(get_current_user_id),
+    service: AiGenerateTaskService = Depends(get_ai_generate_task_service),
+):
+    return success_payload(
+        await import_function_run(
+            service,
+            run_id,
+            body.confirm_overwrite if body else False,
+            user_id,
+        )
+    )

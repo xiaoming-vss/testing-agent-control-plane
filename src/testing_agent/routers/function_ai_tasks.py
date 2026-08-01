@@ -7,6 +7,7 @@ from testing_agent.handlers.function_case_generate_task import (
     delete_function_case_generate_task,
     get_function_case_generate_task,
     get_function_case_generate_task_run,
+    import_function_case_generate_task_run,
     list_function_case_generate_task_runs,
     list_function_case_generate_tasks,
     retry_function_case_stage,
@@ -15,10 +16,12 @@ from testing_agent.handlers.function_case_generate_task import (
     run_function_case_generate_task,
     save_function_case_stage_output,
     update_function_case_generate_task,
+    update_function_case_generate_task_run_result,
 )
 from testing_agent.schemas.ai_generate_task import (
     AiGenerateTaskResponse,
     AiGenerateTaskRunResponse,
+    FunctionGenerateTaskImportResponse,
 )
 from testing_agent.schemas.common import ApiResponse, EmptyData, ListResponse
 
@@ -90,3 +93,11 @@ router.post(
 )(
     review_function_case_generate_task_run
 )
+router.patch(
+    "/function-case-generate-task-runs/{run_id}/result",
+    response_model=ApiResponse[AiGenerateTaskRunResponse],
+)(update_function_case_generate_task_run_result)
+router.post(
+    "/function-case-generate-task-runs/{run_id}/import",
+    response_model=ApiResponse[FunctionGenerateTaskImportResponse],
+)(import_function_case_generate_task_run)

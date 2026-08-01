@@ -186,7 +186,11 @@ async def repository_case_exists(repository: Any, collection_id: str, name: str)
 
 
 async def validate_api_collection_import_payload(
-    repository: Any, collection_id: str, payload: dict[str, Any]
+    repository: Any,
+    collection_id: str,
+    payload: dict[str, Any],
+    *,
+    check_existing: bool = True,
 ) -> list[dict[str, Any]]:
     if set(payload) - {"cases"}:
         unknown = sorted(set(payload) - {"cases"})[0]
@@ -206,10 +210,11 @@ async def validate_api_collection_import_payload(
             raise import_error(f"cases[{case_index}].name 不能为空")
         if len(name) > 120:
             raise import_error(f"cases[{case_index}].name 长度不能超过 120")
-        if name in case_names:
+        normalized_name = name.casefold()
+        if normalized_name in case_names:
             raise import_error(f"cases[{case_index}].name 与文件内其他用例重复: {name}")
-        case_names.add(name)
-        if await repository_case_exists(repository, collection_id, name):
+        case_names.add(normalized_name)
+        if check_existing and await repository_case_exists(repository, collection_id, name):
             raise import_error(f"集合内已存在同名用例: {name}")
 
         if len(str(item.get("description") or "")) > 512:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import yaml
@@ -331,6 +332,21 @@ def normalize_generated_function_case(item: dict[str, Any], index: int) -> dict[
         "case_type": case_type,
         "order_no": int(first_present(item, "orderNo", "order_no") or index),
     }
+
+
+def validate_function_candidate_cases(
+    cases: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_cases: list[dict[str, Any]] = []
+    names: set[tuple[str, str]] = set()
+    for index, item in enumerate(cases):
+        case = normalize_generated_function_case(item, index)
+        key = (case["module"].casefold(), case["title"].casefold())
+        if key in names:
+            raise ErrBadRequest
+        names.add(key)
+        normalized_cases.append(case)
+    return normalized_cases
 
 
 def compact_imported_suite_ids(suite_ids: list[str]) -> str:
@@ -748,6 +764,332 @@ class AiGenerateTaskService:
         await self.repository.refresh(run)
         return dump_run(run)
 
+    async def update_result(
+        self, kind: str, run_id: str, result_yaml: str, user_id: str
+    ) -> dict[str, Any]:
+        if kind not in {"api", "function"}:
+            raise ErrBadRequest
+        run = await self.owned_run(user_id, run_id, kind)
+        if run.status != "success" or run.review_status != "pending":
+            raise ErrBadRequest
+        if kind == "api":
+            payload = parse_import_payload(result_yaml)
+            await validate_api_collection_import_payload(
+                self.repository, "", payload, check_existing=False
+            )
+        else:
+            cases = generated_function_cases(SimpleNamespace(result_yaml=result_yaml))
+            if not cases:
+                raise ErrBadRequest
+            validate_function_candidate_cases(cases)
+        run.result_yaml = result_yaml
+        await self.repository.commit()
+        await self.repository.refresh(run)
+        return dump_run(run)
+
+    @staticmethod
+    def _normalized_api_case_name(name: Any) -> str:
+        return str(name or "").strip().casefold()
+
+    @staticmethod
+    def _generated_api_case(item: dict[str, Any], index: int) -> dict[str, Any]:
+        body_type = normalize_import_body_type(item.get("bodyType"))
+        body_json = normalize_json_value(item.get("bodyJson"))
+        body_text = str(item.get("bodyText") or "")
+        if body_type == "raw":
+            body_json = None
+        elif body_type == "none":
+            body_json = None
+            body_text = ""
+        extract_rules = item.get("extractRules") or []
+        assert_rules = item.get("assertRules") or []
+        return {
+            "name": str(item.get("name") or f"API Case {index + 1}").strip(),
+            "description": str(item.get("description") or ""),
+            "enabled": bool_value(item.get("enabled"), True),
+            "orderNo": int_value(item.get("orderNo"), 0),
+            "method": normalize_import_method(item.get("method")),
+            "urlTemplate": str(item.get("urlTemplate") or ""),
+            "headers": require_string_map(item.get("headers"), f"cases[{index}].headers"),
+            "query": require_string_map(item.get("query"), f"cases[{index}].query"),
+            "bodyType": body_type,
+            "bodyJson": body_json,
+            "bodyText": body_text,
+            "timeoutMs": int_value(item.get("timeoutMs"), 5000),
+            "continueOnFailure": bool_value(item.get("continueOnFailure"), False),
+            "extractRules": [
+                {
+                    "name": str(rule.get("name") or f"Extract Rule {rule_index + 1}"),
+                    "enabled": bool_value(rule.get("enabled"), True),
+                    "orderNo": int_value(rule.get("orderNo"), rule_index),
+                    "source": str(rule.get("source") or ""),
+                    "sourceExpr": str(rule.get("sourceExpr") or ""),
+                    "varKey": str(rule.get("varKey") or "").strip(),
+                    "defaultValue": str(rule.get("defaultValue") or ""),
+                }
+                for rule_index, rule in enumerate(extract_rules)
+                if isinstance(rule, dict)
+            ],
+            "assertRules": [
+                {
+                    "name": str(rule.get("name") or f"Assert Rule {rule_index + 1}"),
+                    "enabled": bool_value(rule.get("enabled"), True),
+                    "orderNo": int_value(rule.get("orderNo"), rule_index),
+                    "assertSource": str(rule.get("assertSource") or ""),
+                    "targetExpr": str(rule.get("targetExpr") or ""),
+                    "comparator": str(rule.get("comparator") or ""),
+                    "expectedValue": str(rule.get("expectedValue") or ""),
+                }
+                for rule_index, rule in enumerate(assert_rules)
+                if isinstance(rule, dict)
+            ],
+        }
+
+    async def _stored_api_case(self, case: ApiCase) -> dict[str, Any]:
+        extract_rules = await self.repository.list_api_extract_rules(case.case_id)
+        assert_rules = await self.repository.list_api_assert_rules(case.case_id)
+        return {
+            "name": case.name,
+            "description": case.description,
+            "enabled": case.enabled,
+            "orderNo": case.order_no,
+            "method": case.method,
+            "urlTemplate": case.url_template,
+            "headers": case.headers_json or {},
+            "query": case.query_json or {},
+            "bodyType": case.body_type,
+            "bodyJson": case.body_json,
+            "bodyText": case.body_text,
+            "timeoutMs": case.timeout_ms,
+            "continueOnFailure": case.continue_on_failure,
+            "extractRules": [
+                {
+                    "name": rule.name,
+                    "enabled": rule.enabled,
+                    "orderNo": rule.order_no,
+                    "source": rule.source,
+                    "sourceExpr": rule.source_expr,
+                    "varKey": rule.var_key,
+                    "defaultValue": rule.default_value,
+                }
+                for rule in extract_rules
+            ],
+            "assertRules": [
+                {
+                    "name": rule.name,
+                    "enabled": rule.enabled,
+                    "orderNo": rule.order_no,
+                    "assertSource": rule.assert_source,
+                    "targetExpr": rule.target_expr,
+                    "comparator": rule.comparator,
+                    "expectedValue": rule.expected_value,
+                }
+                for rule in assert_rules
+            ],
+        }
+
+    @staticmethod
+    def _apply_api_case(case: ApiCase, item: dict[str, Any]) -> None:
+        case.name = item["name"]
+        case.description = item["description"]
+        case.enabled = item["enabled"]
+        case.order_no = item["orderNo"]
+        case.method = item["method"]
+        case.url_template = item["urlTemplate"]
+        case.headers_json = item["headers"]
+        case.query_json = item["query"]
+        case.body_type = item["bodyType"]
+        case.body_json = item["bodyJson"]
+        case.body_text = item["bodyText"]
+        case.timeout_ms = item["timeoutMs"]
+        case.continue_on_failure = item["continueOnFailure"]
+
+    def _add_api_rules(self, case_id: str, item: dict[str, Any]) -> None:
+        for rule in item["extractRules"]:
+            self.repository.add(
+                ApiExtractRule(
+                    extract_rule_id=new_id(),
+                    case_id=case_id,
+                    name=rule["name"],
+                    enabled=rule["enabled"],
+                    order_no=rule["orderNo"],
+                    source=rule["source"],
+                    source_expr=rule["sourceExpr"],
+                    var_key=rule["varKey"],
+                    default_value=rule["defaultValue"],
+                )
+            )
+        for rule in item["assertRules"]:
+            self.repository.add(
+                ApiAssertRule(
+                    assert_rule_id=new_id(),
+                    case_id=case_id,
+                    name=rule["name"],
+                    enabled=rule["enabled"],
+                    order_no=rule["orderNo"],
+                    assert_source=rule["assertSource"],
+                    target_expr=rule["targetExpr"],
+                    comparator=rule["comparator"],
+                    expected_value=rule["expectedValue"],
+                )
+            )
+
+    async def _replace_api_rules(self, case_id: str, item: dict[str, Any]) -> None:
+        existing_extract = {
+            rule.var_key: rule for rule in await self.repository.list_api_extract_rules(case_id)
+        }
+        existing_assert = {
+            rule.name: rule for rule in await self.repository.list_api_assert_rules(case_id)
+        }
+        generated_extract = {rule["varKey"]: rule for rule in item["extractRules"]}
+        generated_assert = {rule["name"]: rule for rule in item["assertRules"]}
+        for extract_key, extract_rule in list(existing_extract.items()):
+            if extract_key not in generated_extract:
+                await self.repository.delete(extract_rule)
+        for assert_key, assert_rule in list(existing_assert.items()):
+            if assert_key not in generated_assert:
+                await self.repository.delete(assert_rule)
+        await self.repository.flush()
+        for key, values in generated_extract.items():
+            matched_extract = existing_extract.get(key)
+            if matched_extract is None:
+                self.repository.add(
+                    ApiExtractRule(
+                        extract_rule_id=new_id(),
+                        case_id=case_id,
+                        name=values["name"],
+                        enabled=values["enabled"],
+                        order_no=values["orderNo"],
+                        source=values["source"],
+                        source_expr=values["sourceExpr"],
+                        var_key=key,
+                        default_value=values["defaultValue"],
+                    )
+                )
+            else:
+                matched_extract.name = values["name"]
+                matched_extract.enabled = values["enabled"]
+                matched_extract.order_no = values["orderNo"]
+                matched_extract.source = values["source"]
+                matched_extract.source_expr = values["sourceExpr"]
+                matched_extract.default_value = values["defaultValue"]
+        for key, values in generated_assert.items():
+            matched_assert = existing_assert.get(key)
+            if matched_assert is None:
+                self.repository.add(
+                    ApiAssertRule(
+                        assert_rule_id=new_id(),
+                        case_id=case_id,
+                        name=key,
+                        enabled=values["enabled"],
+                        order_no=values["orderNo"],
+                        assert_source=values["assertSource"],
+                        target_expr=values["targetExpr"],
+                        comparator=values["comparator"],
+                        expected_value=values["expectedValue"],
+                    )
+                )
+            else:
+                matched_assert.enabled = values["enabled"]
+                matched_assert.order_no = values["orderNo"]
+                matched_assert.assert_source = values["assertSource"]
+                matched_assert.target_expr = values["targetExpr"]
+                matched_assert.comparator = values["comparator"]
+                matched_assert.expected_value = values["expectedValue"]
+
+    async def import_api_run(
+        self,
+        run_id: str,
+        collection_id: str,
+        confirm_overwrite: bool,
+        user_id: str,
+    ) -> dict[str, Any]:
+        run = await self.owned_run(user_id, run_id, "api")
+        if (
+            run.status != "success"
+            or run.review_status != "approved"
+            or run.import_status == "imported"
+        ):
+            raise ErrBadRequest
+        await self.ensure_collection_owner(user_id, collection_id)
+        raw_cases = await validate_api_collection_import_payload(
+            self.repository,
+            collection_id,
+            generated_payload(run),
+            check_existing=False,
+        )
+        generated_cases = [
+            self._generated_api_case(item, index) for index, item in enumerate(raw_cases)
+        ]
+        existing_cases = await self.repository.list_api_cases(collection_id)
+        existing_by_name: dict[str, ApiCase] = {}
+        for case in existing_cases:
+            normalized_name = self._normalized_api_case_name(case.name)
+            if normalized_name in existing_by_name:
+                raise ErrBadRequest
+            existing_by_name[normalized_name] = case
+        conflicts: list[dict[str, Any]] = []
+        for item in generated_cases:
+            normalized_name = self._normalized_api_case_name(item["name"])
+            existing = existing_by_name.get(normalized_name)
+            if existing is not None:
+                conflicts.append(
+                    {
+                        "normalizedName": normalized_name,
+                        "existingCase": await self._stored_api_case(existing),
+                        "generatedCase": item,
+                    }
+                )
+        if conflicts and not confirm_overwrite:
+            return {
+                "requiresConfirmation": True,
+                "conflicts": conflicts,
+                "run": dump_run(run),
+            }
+
+        old_import_state = (
+            run.imported_collection_id,
+            run.import_status,
+            run.imported_targets,
+            run.imported_at,
+            run.import_migration_complete,
+        )
+        try:
+            for item in generated_cases:
+                normalized_name = self._normalized_api_case_name(item["name"])
+                target_case = existing_by_name.get(normalized_name)
+                if target_case is None:
+                    target_case = ApiCase(case_id=new_id(), collection_id=collection_id)
+                    self._apply_api_case(target_case, item)
+                    self.repository.add(target_case)
+                    self._add_api_rules(target_case.case_id, item)
+                else:
+                    self._apply_api_case(target_case, item)
+                    await self._replace_api_rules(target_case.case_id, item)
+            imported_at = datetime.now(UTC)
+            run.imported_collection_id = collection_id
+            run.import_status = "imported"
+            run.imported_targets = [{"targetType": "api_collection", "targetId": collection_id}]
+            run.imported_at = imported_at
+            run.import_migration_complete = True
+            await self.repository.commit()
+            await self.repository.refresh(run)
+        except Exception:
+            (
+                run.imported_collection_id,
+                run.import_status,
+                run.imported_targets,
+                run.imported_at,
+                run.import_migration_complete,
+            ) = old_import_state
+            await self.repository.rollback()
+            raise
+        return {
+            "requiresConfirmation": False,
+            "conflicts": [],
+            "run": dump_run(run),
+        }
+
     async def list_runs(self, kind: str, task_id: str, user_id: str) -> dict[str, Any]:
         await self.owned_task(user_id, task_id, kind)
         rows = await self.repository.list_runs(task_id)
@@ -923,6 +1265,30 @@ class AiGenerateTaskService:
             action = "approve"
         if action == "rejected":
             action = "reject"
+        if kind in {"api", "function"}:
+            if action == "approve":
+                if run.status != "success":
+                    raise ErrBadRequest
+                if kind == "api":
+                    await validate_api_collection_import_payload(
+                        self.repository, "", generated_payload(run)
+                    )
+                else:
+                    cases = generated_function_cases(run)
+                    if not cases:
+                        raise ErrBadRequest
+                    validate_function_candidate_cases(cases)
+                run.review_status = "approved"
+            elif action == "reject":
+                run.review_status = "rejected"
+            else:
+                raise ErrBadRequest
+            run.review_comment = str(body.get("reviewComment") or body.get("comment") or "")
+            run.reviewer_user_id = user_id
+            run.reviewed_at = datetime.now(UTC)
+            await self.repository.commit()
+            await self.repository.refresh(run)
+            return dump_run(run)
         run.review_comment = str(body.get("reviewComment") or body.get("comment") or "")
         run.reviewer_user_id = user_id
         run.reviewed_at = datetime.now(UTC)
@@ -933,15 +1299,12 @@ class AiGenerateTaskService:
                     raise ErrBadRequest
                 await self.import_generated_api_cases(user_id, run, collection_id)
                 run.imported_collection_id = collection_id
-                run.imported_targets = [
-                    {"targetType": "api_collection", "targetId": collection_id}
-                ]
+                run.imported_targets = [{"targetType": "api_collection", "targetId": collection_id}]
             else:
                 suite_ids = await self.import_generated_function_cases(user_id, run)
                 run.imported_collection_id = compact_imported_suite_ids(suite_ids)
                 run.imported_targets = [
-                    {"targetType": "function_suite", "targetId": suite_id}
-                    for suite_id in suite_ids
+                    {"targetType": "function_suite", "targetId": suite_id} for suite_id in suite_ids
                 ]
             run.import_status = "imported"
             run.imported_at = run.reviewed_at
@@ -1207,6 +1570,3 @@ class AiGenerateTaskService:
         await self.repository.commit()
         await self.repository.refresh(run)
         return dump_run(run)
-
-
-
