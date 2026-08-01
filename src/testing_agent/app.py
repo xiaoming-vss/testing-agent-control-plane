@@ -36,6 +36,7 @@ from testing_agent.routers.resource_bindings import router as resource_bindings_
 from testing_agent.routers.sprint_metrics import router as sprint_metrics_router
 from testing_agent.routers.sprints import router as sprints_router
 from testing_agent.routers.test_report_ai_tasks import router as test_report_ai_tasks_router
+from testing_agent.routers.ui_ai_tasks import router as ui_ai_tasks_router
 from testing_agent.routers.ui_runs import router as ui_runs_router
 from testing_agent.routers.ui_tests import router as ui_tests_router
 from testing_agent.routers.ui_worker import router as ui_worker_router
@@ -131,6 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     v1.include_router(api_tests_router, tags=["API Tests"])
     v1.include_router(api_case_router, tags=["API Tests"])
     v1.include_router(ui_tests_router, tags=["UI Tests"])
+    v1.include_router(ui_ai_tasks_router, tags=["UI AI Tasks"])
     v1.include_router(zentao_integrations_router, tags=["Zentao Integrations"])
     v1.include_router(llm_integrations_router, tags=["LLM Integrations"])
     v1.include_router(resource_bindings_router, tags=["Resource Bindings"])
@@ -155,4 +157,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
-

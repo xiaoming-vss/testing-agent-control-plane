@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from testing_agent.models.ai_generate_task import ApiCaseGenerateTaskRun
+from testing_agent.models.ai_generate_task_source_archive import AiGenerateTaskSourceArchive
 from testing_agent.models.api_case_run import ApiCaseRun
 from testing_agent.models.api_collection_run import ApiCollectionRun, ApiCollectionRunItem
 from testing_agent.models.integration_connection import IntegrationConnection
@@ -16,6 +17,14 @@ from testing_agent.models.worker_task import WorkerTask
 class WorkerTaskRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def get_worker_task(self, domain: str, task_id: str) -> WorkerTask | None:
+        return await self.session.scalar(
+            select(WorkerTask).where(
+                WorkerTask.domain == domain,
+                WorkerTask.task_id == task_id,
+            )
+        )
 
     async def claim_pending(self, domain: str) -> WorkerTask | None:
         return await self.session.scalar(
@@ -31,9 +40,7 @@ class WorkerTaskRepository:
 
     async def get_api_collection_run(self, collection_run_id: str) -> ApiCollectionRun | None:
         return await self.session.scalar(
-            select(ApiCollectionRun).where(
-                ApiCollectionRun.collection_run_id == collection_run_id
-            )
+            select(ApiCollectionRun).where(ApiCollectionRun.collection_run_id == collection_run_id)
         )
 
     async def get_api_run(self, run_id: str) -> ApiCaseRun | None:
@@ -76,6 +83,13 @@ class WorkerTaskRepository:
     async def get_ai_run(self, run_id: str) -> ApiCaseGenerateTaskRun | None:
         return await self.session.scalar(
             select(ApiCaseGenerateTaskRun).where(ApiCaseGenerateTaskRun.run_id == run_id)
+        )
+
+    async def get_source_archive(self, task_id: str) -> AiGenerateTaskSourceArchive | None:
+        return await self.session.scalar(
+            select(AiGenerateTaskSourceArchive).where(
+                AiGenerateTaskSourceArchive.task_id == task_id
+            )
         )
 
     async def get_requirement(self, requirement_id: str) -> Requirement | None:

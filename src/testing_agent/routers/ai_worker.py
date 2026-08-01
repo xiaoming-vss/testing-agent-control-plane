@@ -13,6 +13,7 @@ from testing_agent.handlers.ai_worker import (
     mark_started,
     report_progress,
     requirement_document,
+    source_archive,
 )
 from testing_agent.schemas.workers import (
     WorkerClaimPayload,
@@ -44,4 +45,9 @@ router.get(
     response_class=Response,
     responses={200: {"content": {"application/octet-stream": {}}}},
 )(requirement_document)
+router.get(
+    "/tasks/{task_id}/source-archive",
+    response_class=Response,
+    responses={200: {"content": {"application/zip": {}}}},
+)(source_archive)
 router.patch("/tasks/{task_id}/progress", status_code=204)(report_progress)

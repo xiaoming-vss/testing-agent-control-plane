@@ -96,6 +96,18 @@ async def requirement_document(
     )
 
 
+async def source_archive(
+    task_id: str,
+    service: WorkerTaskService = Depends(get_worker_task_service),
+):
+    archive = await service.source_archive(task_id)
+    return FileResponse(
+        archive.storage_path,
+        filename=archive.filename,
+        media_type="application/zip",
+    )
+
+
 async def report_progress(
     task_id: str,
     body: WorkerProgressRequest,
@@ -103,4 +115,3 @@ async def report_progress(
 ):
     await service.progress(task_id, body)
     return Response(status_code=204)
-

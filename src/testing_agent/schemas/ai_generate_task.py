@@ -132,6 +132,16 @@ class FunctionGenerateTaskImportRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class SourceArchiveResponse(BaseModel):
+    archive_id: str = Field(alias="archiveId")
+    filename: str
+    size_bytes: int = Field(alias="sizeBytes")
+    sha256: str
+    uploaded_at: datetime = Field(alias="uploadedAt")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AiGenerateTaskResponse(BaseModel):
     task_id: str = Field(alias="taskId")
     task_type: str = Field(alias="taskType")
@@ -142,6 +152,7 @@ class AiGenerateTaskResponse(BaseModel):
     creator_user_id: str = Field(alias="creatorUserId")
     source_type: str = Field(alias="sourceType")
     source_content: str = Field(alias="sourceContent")
+    source_archive: SourceArchiveResponse | None = Field(default=None, alias="sourceArchive")
     instruction: str = ""
 
     model_config = ConfigDict(populate_by_name=True)

@@ -244,6 +244,7 @@ def get_ai_generate_task_service(
             ),
             zentao_resource_client,
         ),
+        settings.uploads_dir,
     )
 
 
@@ -251,5 +252,3 @@ def get_worker_task_service(
     session: AsyncSession = Depends(get_session),
 ) -> WorkerTaskService:
     return WorkerTaskService(WorkerTaskRepository(session))
-
-

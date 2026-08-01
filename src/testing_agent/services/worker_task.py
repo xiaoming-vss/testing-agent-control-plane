@@ -280,6 +280,15 @@ class WorkerTaskService:
             "skills": [project_skill_worker_payload(row) for row in rows],
         }
 
+    async def _ai_worker_task(self, task_id: str):
+        if hasattr(self.repository, "get_worker_task"):
+            task = await self.repository.get_worker_task("ai", task_id)
+            if task is None:
+                raise ErrNotFound
+            return task
+        return await find_task(self.repository.session, "ai", task_id)
+
+
     async def llm_credentials(self, task_id: str) -> dict:
         task = await find_task(self.repository.session, "ai", task_id)
         connection = None
@@ -288,16 +297,40 @@ class WorkerTaskService:
         return llm_credentials_payload(task_id, connection)
 
     async def requirement_document(self, task_id: str):
-        task = await find_task(self.repository.session, "ai", task_id)
-        if task.task_type not in {"requirement_analysis", "functional_case_generate"}:
+        task = await self._ai_worker_task(task_id)
+        if task.task_type not in {
+            "requirement_analysis", "functional_case_generate", "ui_case_generate"
+        }:
             raise ErrNotFound
         run = await self.repository.get_ai_run(task.run_id)
         if run is None or not run.requirement_id:
+            raise ErrNotFound
+        if (
+            task.task_type == "ui_case_generate"
+            and run.task_id != task.generate_task_id
+        ):
             raise ErrNotFound
         requirement = await self.repository.get_requirement(run.requirement_id)
         if requirement is None or not requirement.document_storage_path:
             raise ErrNotFound
         return requirement
+
+    async def source_archive(self, task_id: str):
+        task = await self._ai_worker_task(task_id)
+        if task.task_type != "ui_case_generate":
+            raise ErrNotFound
+        run = await self.repository.get_ai_run(task.run_id)
+        if (
+            run is None
+            or run.task_id != task.generate_task_id
+            or not run.task_id
+        ):
+            raise ErrNotFound
+        archive = await self.repository.get_source_archive(run.task_id)
+        if archive is None:
+            raise ErrNotFound
+        return archive
+
 
     async def progress(self, task_id: str, body: WorkerProgressRequest) -> dict:
         task = await find_task(self.repository.session, "ai", task_id)

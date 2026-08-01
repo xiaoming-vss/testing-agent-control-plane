@@ -2,6 +2,7 @@
 
 from testing_agent.db.base import Base
 from testing_agent.models.ai_generate_task import AiGenerateTask, ApiCaseGenerateTaskRun
+from testing_agent.models.ai_generate_task_source_archive import AiGenerateTaskSourceArchive
 from testing_agent.models.api_assert_rule import ApiAssertRule
 from testing_agent.models.api_case import ApiCase
 from testing_agent.models.api_case_run import ApiCaseRun
@@ -28,6 +29,7 @@ from testing_agent.models.worker_task import WorkerTask
 
 __all__ = [
     "AiGenerateTask",
+    "AiGenerateTaskSourceArchive",
     "ApiAssertRule",
     "ApiCase",
     "ApiCaseGenerateTaskRun",

@@ -241,6 +241,10 @@ def worker_requirement_document_download_url(worker_task_id: str) -> str:
     return f"/internal/ai-worker/tasks/{worker_task_id}/requirement-document"
 
 
+def worker_source_archive_download_url(worker_task_id: str) -> str:
+    return f"/internal/ai-worker/tasks/{worker_task_id}/source-archive"
+
+
 def build_test_report_run_snapshot(
     task: AiGenerateTask,
     run_id: str,
@@ -305,6 +309,9 @@ async def build_generate_run_snapshot(
         snapshot["documentDownloadUrl"] = document_download_url
     else:
         snapshot["sourceType"] = task.source_type
+    if kind == "ui" and worker_task_id:
+        snapshot["sourceArchiveDownloadUrl"] = worker_source_archive_download_url(worker_task_id)
+        snapshot["documentDownloadUrl"] = worker_requirement_document_download_url(worker_task_id)
     return snapshot
 
 
@@ -499,6 +506,32 @@ def requirement_analysis_import_content(run: ApiCaseGenerateTaskRun | Any) -> st
     raise ErrBadRequest
 
 
+def validate_ui_candidate_cases(result_yaml: str) -> list[dict[str, Any]]:
+    payload = generated_payload(SimpleNamespace(result_yaml=result_yaml))
+    cases = payload.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise ErrBadRequest
+    for case in cases:
+        if (
+            not isinstance(case, dict)
+            or not isinstance(case.get("name"), str)
+            or not case["name"].strip()
+            or not isinstance(case.get("enabled"), bool)
+            or not isinstance(case.get("orderNo"), int)
+            or isinstance(case.get("orderNo"), bool)
+            or not isinstance(case.get("stepsJson"), list)
+        ):
+            raise ErrBadRequest
+        for step in case["stepsJson"]:
+            if (
+                not isinstance(step, dict)
+                or not isinstance(step.get("keyword"), str)
+                or not step["keyword"].strip()
+            ):
+                raise ErrBadRequest
+    return cases
+
+
 class AiGenerateTaskService:
     def __init__(
         self,
@@ -507,12 +540,15 @@ class AiGenerateTaskService:
         source_archive_storage_root: str | Path | None = None,
     ):
         self.repository = repository
+        self.source_archive_repository: Any
         if hasattr(repository, "get_source_archive"):
             self.source_archive_repository = repository
-        else:
+        elif hasattr(repository, "session"):
             self.source_archive_repository = AiGenerateTaskSourceArchiveRepository(
                 repository.session
             )
+        else:
+            self.source_archive_repository = repository
         self.source_archive_storage_root = Path(
             source_archive_storage_root or "storage/ai-generate-task-sources"
         )
@@ -647,27 +683,116 @@ class AiGenerateTaskService:
     async def list(self, kind: str, project_id: str, user_id: str) -> dict[str, Any]:
         await self.ensure_project_owner(user_id, project_id)
         rows = await self.repository.list_tasks(project_id, task_type_for(kind))
-        return list_payload([dump_task(row) for row in rows])
+        payloads = []
+        for row in rows:
+            archive = (
+                await self.source_archive_repository.get_source_archive(row.task_id)
+                if kind == "ui"
+                else None
+            )
+            payloads.append(dump_task(row, archive))
+        return list_payload(payloads)
 
     async def get(self, kind: str, task_id: str, user_id: str) -> dict:
-        return dump_task(await self.owned_task(user_id, task_id, kind))
+        task = await self.owned_task(user_id, task_id, kind)
+        archive = await self.source_archive_repository.get_source_archive(task.task_id)
+        return dump_task(task, archive if kind == "ui" else None)
+
+    async def upload_source_archive(
+        self, task_id: str, filename: str, content: bytes, user_id: str
+    ) -> dict[str, Any]:
+        task = await self.owned_task(user_id, task_id, "ui")
+        safe_filename = Path(filename).name
+        validate_source_archive(safe_filename, content)
+
+        archive_id = new_id()
+        uploaded_at = datetime.now(UTC)
+        task_storage_root = self.source_archive_storage_root / task.task_id
+        target_path = task_storage_root / f"{archive_id}.zip"
+        temporary_path = task_storage_root / f".{archive_id}.tmp"
+        task_storage_root.mkdir(parents=True, exist_ok=True)
+        temporary_path.write_bytes(content)
+        temporary_path.replace(target_path)
+
+        source_repository = self.source_archive_repository
+        archive = await source_repository.get_source_archive_for_update(task.task_id)
+        old_path = Path(archive.storage_path) if archive is not None else None
+        if archive is None:
+            archive = AiGenerateTaskSourceArchive(
+                archive_id=archive_id,
+                task_id=task.task_id,
+                filename=safe_filename,
+                size_bytes=len(content),
+                sha256=hashlib.sha256(content).hexdigest(),
+                storage_path=str(target_path),
+                uploaded_at=uploaded_at,
+            )
+            source_repository.add(archive)
+        else:
+            archive.archive_id = archive_id
+            archive.filename = safe_filename
+            archive.size_bytes = len(content)
+            archive.sha256 = hashlib.sha256(content).hexdigest()
+            archive.storage_path = str(target_path)
+            archive.uploaded_at = uploaded_at
+
+        try:
+            await source_repository.commit()
+            await source_repository.refresh(archive)
+        except Exception:
+            target_path.unlink(missing_ok=True)
+            if hasattr(source_repository, "rollback"):
+                await source_repository.rollback()
+            raise
+
+        if old_path is not None and old_path != target_path:
+            try:
+                if old_path.resolve().is_relative_to(self.source_archive_storage_root.resolve()):
+                    old_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return dump_task(task, archive)
 
     async def update(self, kind: str, task_id: str, body: dict[str, Any], user_id: str) -> dict:
         task = await self.owned_task(user_id, task_id, kind)
-        field_map = {
-            "name": "name",
-            "sourceType": "source_type",
-            "source_type": "source_type",
-            "sourceContent": "source_content",
-            "source_content": "source_content",
-            "instruction": "instruction",
-        }
+        if kind == "ui":
+            requirement_key = "requirementId" if "requirementId" in body else "requirement_id"
+            if requirement_key in body:
+                requirement_id = str(body.get(requirement_key) or "")
+                if not requirement_id:
+                    raise ErrBadRequest
+                requirement = await self.repository.get_requirement(requirement_id)
+                if requirement is None:
+                    raise ErrNotFound
+                sprint = await self.repository.get_sprint(requirement.sprint_id)
+                if sprint is None or sprint.project_id != task.project_id:
+                    raise ErrNotFound
+                await self.ensure_requirement_owner(user_id, requirement_id)
+                task.requirement_id = requirement_id
+                task.sprint_id = requirement.sprint_id
+            field_map = {"name": "name", "instruction": "instruction"}
+            task.source_type = "source_archive"
+            task.source_content = ""
+        else:
+            field_map = {
+                "name": "name",
+                "sourceType": "source_type",
+                "source_type": "source_type",
+                "sourceContent": "source_content",
+                "source_content": "source_content",
+                "instruction": "instruction",
+            }
         for key, attr in field_map.items():
             if key in body:
                 setattr(task, attr, body[key])
         await self.repository.commit()
         await self.repository.refresh(task)
-        return dump_task(task)
+        archive = (
+            await self.source_archive_repository.get_source_archive(task.task_id)
+            if kind == "ui"
+            else None
+        )
+        return dump_task(task, archive)
 
     async def delete(self, kind: str, task_id: str, user_id: str) -> dict:
         task = await self.owned_task(user_id, task_id, kind)
@@ -787,6 +912,10 @@ class AiGenerateTaskService:
     async def run(self, kind: str, task_id: str, body: dict[str, Any] | None, user_id: str) -> dict:
         task = await self.owned_task(user_id, task_id, kind)
         body = body or {}
+        if kind == "ui" and (
+            await self.source_archive_repository.get_source_archive(task.task_id) is None
+        ):
+            raise ErrBadRequest
         llm_connection_id = str(body.get("connectionId") or body.get("llmConnectionId") or "")
         if not llm_connection_id:
             raise ErrBadRequest
@@ -862,7 +991,7 @@ class AiGenerateTaskService:
     async def update_result(
         self, kind: str, run_id: str, result_yaml: str, user_id: str
     ) -> dict[str, Any]:
-        if kind not in {"api", "function"}:
+        if kind not in {"api", "function", "ui"}:
             raise ErrBadRequest
         run = await self.owned_run(user_id, run_id, kind)
         if run.status != "success" or run.review_status != "pending":
@@ -872,11 +1001,13 @@ class AiGenerateTaskService:
             await validate_api_collection_import_payload(
                 self.repository, "", payload, check_existing=False
             )
-        else:
+        elif kind == "function":
             cases = generated_function_cases(SimpleNamespace(result_yaml=result_yaml))
             if not cases:
                 raise ErrBadRequest
             validate_function_candidate_cases(cases)
+        else:
+            validate_ui_candidate_cases(result_yaml)
         run.result_yaml = result_yaml
         await self.repository.commit()
         await self.repository.refresh(run)
@@ -1360,7 +1491,7 @@ class AiGenerateTaskService:
             action = "approve"
         if action == "rejected":
             action = "reject"
-        if kind in {"api", "function"}:
+        if kind in {"api", "function", "ui"}:
             if action == "approve":
                 if run.status != "success":
                     raise ErrBadRequest
@@ -1368,11 +1499,13 @@ class AiGenerateTaskService:
                     await validate_api_collection_import_payload(
                         self.repository, "", generated_payload(run)
                     )
-                else:
+                elif kind == "function":
                     cases = generated_function_cases(run)
                     if not cases:
                         raise ErrBadRequest
                     validate_function_candidate_cases(cases)
+                else:
+                    validate_ui_candidate_cases(run.result_yaml)
                 run.review_status = "approved"
             elif action == "reject":
                 run.review_status = "rejected"
