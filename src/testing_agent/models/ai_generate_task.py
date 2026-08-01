@@ -55,6 +55,14 @@ class ApiCaseGenerateTaskRun(Base):
     imported_collection_id: Mapped[str] = mapped_column(
         String(64), index=True, nullable=False, default=""
     )
+    import_status: Mapped[str] = mapped_column(
+        String(20), index=True, nullable=False, default="pending"
+    )
+    imported_targets: Mapped[list[dict[str, str]] | None] = mapped_column(
+        JSON, nullable=True, default=list
+    )
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    import_migration_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     reviewer_user_id: Mapped[str] = mapped_column(
         String(64), index=True, nullable=False, default=""
     )

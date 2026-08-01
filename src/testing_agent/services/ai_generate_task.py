@@ -114,6 +114,10 @@ def dump_run(run: ApiCaseGenerateTaskRun) -> dict[str, Any]:
         "resultSummaryJson": run.result_summary_json or {},
         "reviewStatus": run.review_status,
         "importedCollectionId": run.imported_collection_id,
+        "importStatus": getattr(run, "import_status", "pending"),
+        "importedTargets": getattr(run, "imported_targets", None) or [],
+        "importedAt": getattr(run, "imported_at", None),
+        "importMigrationComplete": getattr(run, "import_migration_complete", True),
         "reviewerUserId": run.reviewer_user_id,
         "reviewedAt": run.reviewed_at,
         "reviewComment": run.review_comment,
@@ -929,13 +933,27 @@ class AiGenerateTaskService:
                     raise ErrBadRequest
                 await self.import_generated_api_cases(user_id, run, collection_id)
                 run.imported_collection_id = collection_id
+                run.imported_targets = [
+                    {"targetType": "api_collection", "targetId": collection_id}
+                ]
             else:
                 suite_ids = await self.import_generated_function_cases(user_id, run)
                 run.imported_collection_id = compact_imported_suite_ids(suite_ids)
+                run.imported_targets = [
+                    {"targetType": "function_suite", "targetId": suite_id}
+                    for suite_id in suite_ids
+                ]
+            run.import_status = "imported"
+            run.imported_at = run.reviewed_at
+            run.import_migration_complete = True
             run.review_status = "approved"
         elif action == "reject":
             run.review_status = "rejected"
             run.imported_collection_id = ""
+            run.import_status = "pending"
+            run.imported_targets = []
+            run.imported_at = None
+            run.import_migration_complete = True
         else:
             raise ErrBadRequest
         await self.repository.commit()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -128,6 +128,15 @@ class AiGenerateTaskResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ImportedTarget(BaseModel):
+    target_type: Literal["api_collection", "function_suite", "ui_suite"] = Field(
+        alias="targetType"
+    )
+    target_id: str = Field(alias="targetId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AiGenerateTaskRunResponse(BaseModel):
     run_id: str = Field(alias="runId")
     task_id: str = Field(alias="taskId")
@@ -147,6 +156,10 @@ class AiGenerateTaskRunResponse(BaseModel):
     result_summary_json: Any = Field(default_factory=dict, alias="resultSummaryJson")
     review_status: str = Field(alias="reviewStatus")
     imported_collection_id: str = Field(alias="importedCollectionId")
+    import_status: Literal["pending", "imported"] = Field(alias="importStatus")
+    imported_targets: list[ImportedTarget] = Field(default_factory=list, alias="importedTargets")
+    imported_at: datetime | str | None = Field(default=None, alias="importedAt")
+    import_migration_complete: bool = Field(alias="importMigrationComplete")
     reviewer_user_id: str = Field(alias="reviewerUserId")
     reviewed_at: datetime | str | None = Field(default=None, alias="reviewedAt")
     review_comment: str = Field(alias="reviewComment")
