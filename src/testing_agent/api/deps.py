@@ -43,6 +43,7 @@ from testing_agent.services.auth import AuthService
 from testing_agent.services.function_test_case import FunctionTestCaseService
 from testing_agent.services.function_test_suite import FunctionTestSuiteService
 from testing_agent.services.integration_connection import IntegrationConnectionService
+from testing_agent.services.integration_credentials import IntegrationCredentialCipher
 from testing_agent.services.project import ProjectService
 from testing_agent.services.project_skill_space import ProjectSkillSpaceService
 from testing_agent.services.requirement import RequirementService
@@ -191,6 +192,7 @@ def get_integration_connection_service(
     return IntegrationConnectionService(
         IntegrationConnectionRepository(session),
         ZentaoResourceClient(settings.zentao_service_base_url),
+        credential_cipher=IntegrationCredentialCipher(settings.integration_key),
     )
 
 

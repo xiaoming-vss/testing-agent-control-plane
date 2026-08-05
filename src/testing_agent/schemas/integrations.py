@@ -25,6 +25,22 @@ class UpdateZentaoIntegrationConnectionRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class CreateGitLabIntegrationConnectionRequest(BaseModel):
+    name: str
+    base_url: str = Field(alias="baseUrl")
+    access_token: str = Field(alias="accessToken")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class UpdateGitLabIntegrationConnectionRequest(BaseModel):
+    name: str | None = None
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    access_token: str | None = Field(default=None, alias="accessToken")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class CreateLLMIntegrationConnectionRequest(BaseModel):
     project_id: str = Field(default="", alias="projectId")
     name: str

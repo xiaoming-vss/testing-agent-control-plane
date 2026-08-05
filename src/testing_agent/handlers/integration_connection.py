@@ -5,12 +5,73 @@ from fastapi import Depends, Query
 from testing_agent.api.deps import get_current_user_id, get_integration_connection_service
 from testing_agent.core.errors import success_payload
 from testing_agent.schemas.integrations import (
+    CreateGitLabIntegrationConnectionRequest,
     CreateLLMIntegrationConnectionRequest,
     CreateZentaoIntegrationConnectionRequest,
+    UpdateGitLabIntegrationConnectionRequest,
     UpdateLLMIntegrationConnectionRequest,
     UpdateZentaoIntegrationConnectionRequest,
 )
 from testing_agent.services.integration_connection import IntegrationConnectionService
+
+
+async def create_gitlab_connection(
+    body: CreateGitLabIntegrationConnectionRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: IntegrationConnectionService = Depends(get_integration_connection_service),
+):
+    return success_payload(
+        await service.create("gitlab", body.model_dump(by_alias=True), user_id)
+    )
+
+
+async def list_gitlab_connections(
+    user_id: str = Depends(get_current_user_id),
+    service: IntegrationConnectionService = Depends(get_integration_connection_service),
+):
+    return success_payload(await service.list("gitlab", user_id))
+
+
+async def get_gitlab_connection(
+    connection_id: str,
+    user_id: str = Depends(get_current_user_id),
+    service: IntegrationConnectionService = Depends(get_integration_connection_service),
+):
+    return success_payload(await service.get("gitlab", connection_id, user_id))
+
+
+async def update_gitlab_connection(
+    connection_id: str,
+    body: UpdateGitLabIntegrationConnectionRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: IntegrationConnectionService = Depends(get_integration_connection_service),
+):
+    return success_payload(
+        await service.update(
+            "gitlab",
+            connection_id,
+            body.model_dump(by_alias=True, exclude_none=True),
+            user_id,
+        )
+    )
+
+
+async def reauth_gitlab_connection(
+    connection_id: str,
+    body: UpdateGitLabIntegrationConnectionRequest | None = None,
+    user_id: str = Depends(get_current_user_id),
+    service: IntegrationConnectionService = Depends(get_integration_connection_service),
+):
+    payload = body.model_dump(by_alias=True, exclude_none=True) if body else None
+    return success_payload(await service.reauth_gitlab(connection_id, payload, user_id))
+
+
+async def delete_gitlab_connection(
+    connection_id: str,
+    user_id: str = Depends(get_current_user_id),
+    service: IntegrationConnectionService = Depends(get_integration_connection_service),
+):
+    return success_payload(await service.delete("gitlab", connection_id, user_id))
 
 
 async def create_zentao_connection(
@@ -449,4 +510,3 @@ async def delete_project_llm_connection(
     service: IntegrationConnectionService = Depends(get_integration_connection_service),
 ):
     return success_payload(await service.delete("llm", connection_id, user_id, project_id))
-

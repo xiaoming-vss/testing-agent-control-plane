@@ -15,6 +15,8 @@ from testing_agent.core.sid import new_id
 from testing_agent.models.integration_connection import IntegrationConnection
 from testing_agent.repositories.integration_connection import IntegrationConnectionRepository
 from testing_agent.services.common import list_payload
+from testing_agent.services.gitlab_auth import GitLabAuthProvider, normalize_gitlab_base_url
+from testing_agent.services.integration_credentials import IntegrationCredentialCipher
 from testing_agent.services.zentao_auth import ZentaoAuthProvider
 from testing_agent.services.zentao_resource import truncate_error
 
@@ -48,10 +50,14 @@ class IntegrationConnectionService:
         repository: IntegrationConnectionRepository,
         zentao_resource_client: Any | None = None,
         zentao_auth_provider: Any | None = None,
+        gitlab_auth_provider: Any | None = None,
+        credential_cipher: IntegrationCredentialCipher | None = None,
     ):
         self.repository = repository
         self.zentao_resource_client = zentao_resource_client
         self.zentao_auth_provider = zentao_auth_provider or ZentaoAuthProvider()
+        self.gitlab_auth_provider = gitlab_auth_provider or GitLabAuthProvider()
+        self.credential_cipher = credential_cipher
 
     async def get_owned(
         self, user_id: str, provider: str, connection_id: str, project_id: str = ""
@@ -101,6 +107,24 @@ class IntegrationConnectionService:
             name_value = name
             base_url_value = base_url
             account_value = account
+        elif provider == "gitlab":
+            name = str(body.get("name") or "").strip()
+            base_url = self._normalize_gitlab_base_url(str(body.get("baseUrl") or ""))
+            access_token_value = str(body.get("accessToken") or "").strip()
+            if not name or not access_token_value:
+                raise ErrBadRequest
+            await self._validate_gitlab(base_url, access_token_value)
+            secret_json = {}
+            extra_json = {}
+            auth_type = "personal_access_token"
+            access_token = self._encrypt_gitlab_token(access_token_value)
+            refresh_token = ""
+            status = "active"
+            last_auth_at = datetime.now(UTC)
+            last_auth_error = ""
+            name_value = name
+            base_url_value = base_url
+            account_value = ""
         else:
             secret_json = {"apiKey": body.get("apiKey", "")}
             extra_json = {"modelId": body.get("modelId", "")}
@@ -156,6 +180,33 @@ class IntegrationConnectionService:
     ) -> dict:
         await self.ensure_project_owner(user_id, project_id)
         connection = await self.get_owned(user_id, provider, connection_id, project_id)
+        if provider == "gitlab":
+            name = str(body.get("name", connection.name)).strip()
+            if not name:
+                raise ErrBadRequest
+            base_url = self._normalize_gitlab_base_url(
+                str(body.get("baseUrl", connection.base_url))
+            )
+            credentials_changed = "baseUrl" in body or "accessToken" in body
+            if "accessToken" in body:
+                access_token = str(body["accessToken"] or "").strip()
+                if not access_token:
+                    raise ErrBadRequest
+            else:
+                access_token = self._decrypt_gitlab_token(connection.access_token)
+            if credentials_changed:
+                await self._validate_gitlab(base_url, access_token)
+            connection.name = name
+            connection.base_url = base_url
+            if "accessToken" in body:
+                connection.access_token = self._encrypt_gitlab_token(access_token)
+            if credentials_changed:
+                connection.status = "active"
+                connection.last_auth_at = datetime.now(UTC)
+                connection.last_auth_error = ""
+            await self.repository.commit()
+            await self.repository.refresh(connection)
+            return dump_connection(connection)
         old_base_url = connection.base_url
         old_account = connection.account
         old_password = self._zentao_password(connection) if provider == "zentao" else ""
@@ -223,6 +274,29 @@ class IntegrationConnectionService:
                 truncate_error(str(exc)),
             ) from exc
         self._apply_zentao_auth_success(connection, auth_result)
+        await self.repository.commit()
+        await self.repository.refresh(connection)
+        return dump_connection(connection)
+
+    async def reauth_gitlab(
+        self,
+        connection_id: str,
+        body: dict[str, Any] | None,
+        user_id: str,
+    ) -> dict:
+        connection = await self.get_owned(user_id, "gitlab", connection_id)
+        if body and "accessToken" in body:
+            access_token = str(body["accessToken"] or "").strip()
+            if not access_token:
+                raise ErrBadRequest
+        else:
+            access_token = self._decrypt_gitlab_token(connection.access_token)
+        await self._validate_gitlab(connection.base_url, access_token)
+        if body and "accessToken" in body:
+            connection.access_token = self._encrypt_gitlab_token(access_token)
+        connection.status = "active"
+        connection.last_auth_at = datetime.now(UTC)
+        connection.last_auth_error = ""
         await self.repository.commit()
         await self.repository.refresh(connection)
         return dump_connection(connection)
@@ -488,6 +562,31 @@ class IntegrationConnectionService:
                 ErrIntegrationConnectionAuthFailed,
                 truncate_error(str(exc)),
             ) from exc
+
+    async def _validate_gitlab(self, base_url: str, access_token: str) -> None:
+        try:
+            await self.gitlab_auth_provider.validate(base_url, access_token)
+        except Exception as exc:
+            raise dynamic_error(
+                ErrIntegrationConnectionAuthFailed,
+                truncate_error(str(exc)),
+            ) from exc
+
+    def _encrypt_gitlab_token(self, access_token: str) -> str:
+        if self.credential_cipher is None:
+            raise RuntimeError("未配置集成凭据加密器")
+        return self.credential_cipher.encrypt(access_token)
+
+    def _decrypt_gitlab_token(self, access_token: str) -> str:
+        if self.credential_cipher is None:
+            raise RuntimeError("未配置集成凭据加密器")
+        return self.credential_cipher.decrypt(access_token)
+
+    def _normalize_gitlab_base_url(self, base_url: str) -> str:
+        try:
+            return normalize_gitlab_base_url(base_url)
+        except ValueError as exc:
+            raise ErrBadRequest from exc
 
     def _zentao_password(self, connection: IntegrationConnection) -> str:
         secret = connection.secret_json or {}

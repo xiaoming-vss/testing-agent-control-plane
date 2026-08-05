@@ -25,6 +25,7 @@ from testing_agent.routers.api_worker import router as api_worker_router
 from testing_agent.routers.auth import router as auth_router
 from testing_agent.routers.function_ai_tasks import router as function_ai_tasks_router
 from testing_agent.routers.function_tests import router as function_tests_router
+from testing_agent.routers.gitlab_integrations import router as gitlab_integrations_router
 from testing_agent.routers.llm_integrations import router as llm_integrations_router
 from testing_agent.routers.project_skills import router as project_skills_router
 from testing_agent.routers.projects import router as projects_router
@@ -134,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     v1.include_router(ui_tests_router, tags=["UI Tests"])
     v1.include_router(ui_ai_tasks_router, tags=["UI AI Tasks"])
     v1.include_router(zentao_integrations_router, tags=["Zentao Integrations"])
+    v1.include_router(gitlab_integrations_router, tags=["GitLab Integrations"])
     v1.include_router(llm_integrations_router, tags=["LLM Integrations"])
     v1.include_router(resource_bindings_router, tags=["Resource Bindings"])
     v1.include_router(project_skills_router, tags=["Project Skills"])
