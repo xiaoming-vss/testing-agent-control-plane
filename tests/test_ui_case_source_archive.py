@@ -167,6 +167,8 @@ def test_ui_task_requires_owned_requirement_and_forces_archive_source():
         "sourceContent": "",
         "sourceArchive": None,
         "instruction": "Generate login coverage",
+        "createdAt": None,
+        "updatedAt": None,
     }
 
 
@@ -341,9 +343,28 @@ def test_ui_run_requires_archive_and_snapshot_uses_worker_current_source_urls(tm
     assert snapshot["sourceArchiveDownloadUrl"] == (
         f"/internal/ai-worker/tasks/{worker_task.task_id}/source-archive"
     )
-    assert snapshot["documentDownloadUrl"] == (
-        f"/internal/ai-worker/tasks/{worker_task.task_id}/requirement-document"
+    assert "documentDownloadUrl" not in snapshot
+
+
+def test_ui_run_snapshot_includes_imported_requirement_enhanced_text(tmp_path):
+    repository = UiTaskRepository()
+    repository.requirement.document_content = "已确认的登录需求"
+    client, _ = ui_task_client(repository, tmp_path)
+    task_id = create_ui_task(client)
+    uploaded = upload_archive(
+        client, task_id, "source.zip", zip_bytes([("src/main.py", b"v1")])
     )
+    assert uploaded.status_code == 200
+
+    started = client.post(
+        f"/v1/ui-case-generate-tasks/{task_id}/run",
+        json={"connectionId": "llm-1"},
+    )
+
+    assert started.status_code == 200
+    snapshot = started.json()["data"]["snapshotJson"]
+    assert snapshot["sourceContent"] == "已确认的登录需求"
+    assert "documentDownloadUrl" not in snapshot
 
 
 def worker_settings(upload_dir):
@@ -461,7 +482,8 @@ def test_worker_downloads_latest_archive_and_current_optional_requirement_docume
     assert wrong_document.status_code == 404
 
 
-def test_ui_candidate_can_be_edited_approved_and_then_frozen(tmp_path):
+@pytest.mark.parametrize("root_key", ["cases", "items"])
+def test_ui_candidate_can_be_edited_approved_and_then_frozen(tmp_path, root_key):
     repository = UiTaskRepository()
     client, _ = ui_task_client(repository, tmp_path)
     task_id = create_ui_task(client)
@@ -475,7 +497,7 @@ def test_ui_candidate_can_be_edited_approved_and_then_frozen(tmp_path):
     )
     run_id = started.json()["data"]["runId"]
     repository.runs[run_id].status = "success"
-    candidate = """cases:
+    candidate = f"""{root_key}:
   - name: Login
     enabled: true
     orderNo: 1

@@ -73,7 +73,6 @@ def test_missing_go_routes_are_exposed():
         ("POST", "/v1/function-test-suites/{suite_id}/cases/import"),
         ("POST", "/v1/function-test-suites/{suite_id}/zentao/testcases/import"),
         ("GET", "/v1/integrations/zentao/connections"),
-        ("POST", "/v1/integrations/zentao/connections"),
         ("GET", "/v1/integrations/zentao/connections/{connection_id}"),
         ("PATCH", "/v1/integrations/zentao/connections/{connection_id}"),
         ("DELETE", "/v1/integrations/zentao/connections/{connection_id}"),
@@ -209,6 +208,7 @@ def test_missing_go_routes_are_exposed():
     expected = {(method, go_path(path)) for method, path in expected}
 
     assert expected <= routes
+    assert ("POST", "/v1/integrations/zentao/connections") not in routes
     assert ("POST", "/v1/requirements/{requirementId}/analysis-runs") not in routes
     assert ("GET", "/v1/requirements/{requirementId}/analysis-runs") not in routes
 

@@ -4,7 +4,6 @@ from fastapi import APIRouter
 
 from testing_agent.handlers.integration_connection import (
     create_project_zentao_connection,
-    create_zentao_connection,
     delete_project_zentao_connection,
     delete_zentao_connection,
     get_project_zentao_connection,
@@ -79,10 +78,6 @@ router.get(
     response_model=ApiResponse[RemoteResourceListResponse],
 )(list_project_zentao_execution_cases)
 
-router.post(
-    "/integrations/zentao/connections",
-    response_model=ApiResponse[IntegrationConnectionResponse],
-)(create_zentao_connection)
 router.get(
     "/integrations/zentao/connections",
     response_model=ApiResponse[ListResponse[IntegrationConnectionResponse]],

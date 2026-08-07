@@ -264,7 +264,6 @@ class WorkerTaskService:
         item.status = final_run_status(body.status)
         item.snapshot_json = body.snapshot_json or item.snapshot_json
         item.step_results_json = body.step_results or item.step_results_json
-        item.current_url = body.current_url or item.current_url
         item.error_message = body.error_message or ""
         item.finished_at = parse_event_time(body.finished_at) or datetime.now(UTC)
         if body.duration_ms is not None:

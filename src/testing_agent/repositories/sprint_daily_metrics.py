@@ -12,8 +12,8 @@ from testing_agent.models.resource_binding import ResourceBinding
 from testing_agent.models.sprint import Sprint
 from testing_agent.models.sprint_daily_metrics import SprintDailyMetrics
 from testing_agent.models.ui_test_case import UiTestCase
-from testing_agent.models.ui_test_case_run import UiTestCaseRun
 from testing_agent.models.ui_test_suite import UiTestSuite
+from testing_agent.models.ui_test_suite_run import UiTestSuiteRun
 
 
 class SprintDailyMetricsRepository:
@@ -123,24 +123,24 @@ class SprintDailyMetricsRepository:
             ).all()
         )
 
-    async def list_latest_ui_run_statuses(self, sprint_id: str) -> dict[str, str]:
+    async def list_latest_ui_suite_runs(self, sprint_id: str) -> list[UiTestSuiteRun]:
         runs = list(
             (
                 await self.session.scalars(
-                    select(UiTestCaseRun)
-                    .where(UiTestCaseRun.sprint_id == sprint_id)
+                    select(UiTestSuiteRun)
+                    .where(UiTestSuiteRun.sprint_id == sprint_id)
                     .order_by(
-                        UiTestCaseRun.case_id.asc(),
-                        UiTestCaseRun.created_at.desc(),
-                        UiTestCaseRun.id.desc(),
+                        UiTestSuiteRun.suite_id.asc(),
+                        UiTestSuiteRun.created_at.desc(),
+                        UiTestSuiteRun.id.desc(),
                     )
                 )
             ).all()
         )
-        statuses: dict[str, str] = {}
+        latest_runs: dict[str, UiTestSuiteRun] = {}
         for run in runs:
-            statuses.setdefault(run.case_id, run.status)
-        return statuses
+            latest_runs.setdefault(run.suite_id, run)
+        return list(latest_runs.values())
 
     async def get_active_binding(
         self,

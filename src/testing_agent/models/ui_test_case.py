@@ -24,6 +24,6 @@ class UiTestCase(Base, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     order_no: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    steps_json: Mapped[list[Any] | dict[str, Any]] = mapped_column(JSON, nullable=False)
+    steps_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]

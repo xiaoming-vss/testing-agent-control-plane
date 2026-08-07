@@ -169,8 +169,6 @@ class WorkerTaskEventRequest(BaseModel):
     result_yaml: str | None = Field(default=None, alias="resultYaml")
     output_yaml: str | None = Field(default=None, alias="outputYaml")
     result_summary_json: Any | None = Field(default=None, alias="resultSummaryJson")
-    current_url: str | None = Field(default=None, alias="currentUrl")
-    trace_path: str | None = Field(default=None, alias="tracePath")
 
     model_config = ConfigDict(populate_by_name=True)
 

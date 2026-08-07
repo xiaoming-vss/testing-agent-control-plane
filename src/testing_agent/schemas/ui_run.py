@@ -39,8 +39,6 @@ class UiCaseRunResponse(BaseModel):
         validation_alias=AliasChoices("stepResults", "step_results_json"),
         serialization_alias="stepResults",
     )
-    current_url: str = Field(alias="currentUrl")
-    trace_path: str = Field(alias="tracePath")
     error_message: str = Field(alias="errorMessage")
     duration_ms: int = Field(alias="durationMs")
     started_at: datetime | str | None = Field(default="", alias="startedAt")
@@ -63,8 +61,6 @@ class UiSuiteRunResponse(BaseModel):
     failed_count: int = Field(alias="failedCount")
     error_count: int = Field(alias="errorCount")
     skipped_count: int = Field(alias="skippedCount")
-    current_url: str = Field(alias="currentUrl")
-    trace_path: str = Field(alias="tracePath")
     error_message: str = Field(alias="errorMessage")
     started_at: datetime | str | None = Field(default="", alias="startedAt")
     finished_at: datetime | str | None = Field(default="", alias="finishedAt")
@@ -77,8 +73,14 @@ class UiSuiteRunResponse(BaseModel):
 class UiSuiteRunReportItem(BaseModel):
     item_id: str = Field(alias="itemId")
     case_id: str = Field(alias="caseId")
+    case_name: str = Field(default="", alias="caseName")
     status: str
     order_no: int = Field(alias="orderNo")
+    step_results: list[Any] | None = Field(default_factory=list, alias="stepResults")
+    error_message: str = Field(default="", alias="errorMessage")
+    duration_ms: int = Field(default=0, alias="durationMs")
+    started_at: datetime | str | None = Field(default="", alias="startedAt")
+    finished_at: datetime | str | None = Field(default="", alias="finishedAt")
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -283,8 +283,10 @@ class IntegrationConnectionService:
         connection_id: str,
         body: dict[str, Any] | None,
         user_id: str,
+        project_id: str = "",
     ) -> dict:
-        connection = await self.get_owned(user_id, "gitlab", connection_id)
+        await self.ensure_project_owner(user_id, project_id)
+        connection = await self.get_owned(user_id, "gitlab", connection_id, project_id)
         if body and "accessToken" in body:
             access_token = str(body["accessToken"] or "").strip()
             if not access_token:

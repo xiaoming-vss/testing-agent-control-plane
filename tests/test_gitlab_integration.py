@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -7,6 +9,8 @@ from testing_agent.app import create_app
 from testing_agent.services.gitlab_auth import GitLabAuthProvider
 from testing_agent.services.integration_connection import IntegrationConnectionService
 from testing_agent.services.integration_credentials import IntegrationCredentialCipher
+
+PROJECT_CONNECTIONS_URL = "/v1/projects/project-1/integrations/gitlab/connections"
 
 
 class FakeIntegrationConnectionRepository:
@@ -21,6 +25,7 @@ class FakeIntegrationConnectionRepository:
                 if row.user_id == user_id
                 and row.provider == provider
                 and row.connection_id == connection_id
+                and (not project_id or row.project_id == project_id)
                 and row.deleted_at is None
             ),
             None,
@@ -30,8 +35,16 @@ class FakeIntegrationConnectionRepository:
         return [
             row
             for row in self.rows
-            if row.user_id == user_id and row.provider == provider and row.deleted_at is None
+            if row.user_id == user_id
+            and row.provider == provider
+            and (not project_id or row.project_id == project_id)
+            and row.deleted_at is None
         ]
+
+    async def get_project(self, project_id):
+        if project_id != "project-1":
+            return None
+        return SimpleNamespace(project_id=project_id, user_id="user-1")
 
     def add(self, connection):
         self.rows.append(connection)
@@ -124,7 +137,7 @@ def test_user_creates_a_gitlab_connection_with_an_encrypted_token():
     client = gitlab_client(repository, auth_provider, cipher)
 
     response = client.post(
-        "/v1/integrations/gitlab/connections",
+        PROJECT_CONNECTIONS_URL,
         json={
             "name": "公司 GitLab",
             "baseUrl": "https://gitlab.example.com/",
@@ -133,6 +146,7 @@ def test_user_creates_a_gitlab_connection_with_an_encrypted_token():
     )
 
     assert response.status_code == 200
+    assert response.json()["data"]["projectId"] == "project-1"
     assert response.json()["data"] | {
         "provider": "gitlab",
         "name": "公司 GitLab",
@@ -158,7 +172,7 @@ def test_invalid_gitlab_token_does_not_create_a_connection():
     )
 
     response = client.post(
-        "/v1/integrations/gitlab/connections",
+        PROJECT_CONNECTIONS_URL,
         json={
             "name": "公司 GitLab",
             "baseUrl": "https://gitlab.example.com",
@@ -177,7 +191,7 @@ def test_user_updates_a_gitlab_connection_only_after_new_credentials_validate():
     cipher = IntegrationCredentialCipher("integration-key")
     client = gitlab_client(repository, auth_provider, cipher)
     created = client.post(
-        "/v1/integrations/gitlab/connections",
+        PROJECT_CONNECTIONS_URL,
         json={
             "name": "公司 GitLab",
             "baseUrl": "https://gitlab.old.example",
@@ -187,7 +201,7 @@ def test_user_updates_a_gitlab_connection_only_after_new_credentials_validate():
     auth_provider.validated.clear()
 
     response = client.patch(
-        f"/v1/integrations/gitlab/connections/{created['connectionId']}",
+        f"{PROJECT_CONNECTIONS_URL}/{created['connectionId']}",
         json={
             "baseUrl": "https://gitlab.new.example/",
             "accessToken": "new-token",
@@ -206,7 +220,7 @@ def test_user_reauthenticates_with_the_decrypted_stored_gitlab_token():
     cipher = IntegrationCredentialCipher("integration-key")
     client = gitlab_client(repository, auth_provider, cipher)
     created = client.post(
-        "/v1/integrations/gitlab/connections",
+        PROJECT_CONNECTIONS_URL,
         json={
             "name": "公司 GitLab",
             "baseUrl": "https://gitlab.example.com",
@@ -216,7 +230,7 @@ def test_user_reauthenticates_with_the_decrypted_stored_gitlab_token():
     auth_provider.validated.clear()
 
     response = client.post(
-        f"/v1/integrations/gitlab/connections/{created['connectionId']}/reauth"
+        f"{PROJECT_CONNECTIONS_URL}/{created['connectionId']}/reauth"
     )
 
     assert response.status_code == 200
@@ -235,7 +249,7 @@ def test_user_lists_gets_and_deletes_a_gitlab_connection():
         IntegrationCredentialCipher("integration-key"),
     )
     created = client.post(
-        "/v1/integrations/gitlab/connections",
+        PROJECT_CONNECTIONS_URL,
         json={
             "name": "公司 GitLab",
             "baseUrl": "https://gitlab.example.com",
@@ -243,15 +257,15 @@ def test_user_lists_gets_and_deletes_a_gitlab_connection():
         },
     ).json()["data"]
 
-    listed = client.get("/v1/integrations/gitlab/connections")
+    listed = client.get(PROJECT_CONNECTIONS_URL)
     fetched = client.get(
-        f"/v1/integrations/gitlab/connections/{created['connectionId']}"
+        f"{PROJECT_CONNECTIONS_URL}/{created['connectionId']}"
     )
     deleted = client.delete(
-        f"/v1/integrations/gitlab/connections/{created['connectionId']}"
+        f"{PROJECT_CONNECTIONS_URL}/{created['connectionId']}"
     )
     missing = client.get(
-        f"/v1/integrations/gitlab/connections/{created['connectionId']}"
+        f"{PROJECT_CONNECTIONS_URL}/{created['connectionId']}"
     )
 
     assert [item["connectionId"] for item in listed.json()["data"]["items"]] == [
@@ -261,3 +275,11 @@ def test_user_lists_gets_and_deletes_a_gitlab_connection():
     assert deleted.status_code == 200
     assert deleted.json()["data"] == {}
     assert missing.status_code == 404
+
+
+def test_gitlab_only_exposes_project_scoped_connections_and_keeps_zentao_routes():
+    paths = create_app().openapi()["paths"]
+
+    assert not any(path.startswith("/v1/integrations/gitlab/") for path in paths)
+    assert "post" not in paths["/v1/integrations/zentao/connections"]
+    assert "post" in paths["/v1/projects/{projectId}/integrations/gitlab/connections"]

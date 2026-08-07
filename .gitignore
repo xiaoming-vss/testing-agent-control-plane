@@ -15,18 +15,16 @@ wheels/
 # Local tooling and editor files
 .idea/
 .tmp/
-.agents/
-.codex/
-.trellis/
-AGENTS.md
 
 # Local configuration with secrets/credentials
 config/local.toml
 
 # Runtime uploaded/generated data
 storage/requirements/
+storage/ai-generate-task-sources/
 storage/skills/*
 !storage/skills/.gitkeep
 
 # Agent planning artifacts
+.scratch/
 docs/superpowers/

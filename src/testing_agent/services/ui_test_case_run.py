@@ -20,6 +20,7 @@ from testing_agent.schemas.ui_run import (
     UiSuiteRunResponse,
 )
 from testing_agent.services.common import dump, list_payload
+from testing_agent.services.ui_execution_payload import ui_case_payload, ui_suite_payload
 
 
 class UiCaseRunContext:
@@ -62,6 +63,16 @@ def dump_suite_run(run: UiTestSuiteRun) -> dict:
     data = dump(UiSuiteRunResponse, run)
     data["success"] = run.status in {"success", "passed", "completed"}
     return data
+
+
+def suite_run_item_case_name(item: UiTestSuiteRunItem) -> str:
+    snapshot = item.snapshot_json
+    if not isinstance(snapshot, dict):
+        return ""
+    case_snapshot = snapshot.get("case")
+    if not isinstance(case_snapshot, dict):
+        return ""
+    return str(case_snapshot.get("name") or "")
 
 
 class UiTestCaseRunService:
@@ -109,8 +120,9 @@ class UiTestCaseRunService:
         self, user_id: str, case_id: str, _: DebugRunUiCaseRequest
     ) -> dict:
         context = await self.get_owned_case(user_id, case_id)
+        run_id = new_id()
         run = UiTestCaseRun(
-            run_id=new_id(),
+            run_id=run_id,
             case_id=context.case.case_id,
             suite_id=context.suite.suite_id,
             requirement_id=context.requirement.requirement_id,
@@ -119,7 +131,11 @@ class UiTestCaseRunService:
             trigger_user_id=user_id,
             trigger_type="manual",
             status="pending",
-            snapshot_json={},
+            snapshot_json={
+                "runId": run_id,
+                "suite": ui_suite_payload(context.suite),
+                "case": ui_case_payload(context.case),
+            },
             step_results_json=[],
         )
         task = WorkerTask(
@@ -146,8 +162,29 @@ class UiTestCaseRunService:
     async def run_suite(self, user_id: str, suite_id: str, _: RunUiSuiteRequest) -> dict:
         context = await self.get_owned_suite(user_id, suite_id)
         cases = await self.repository.list_cases(suite_id)
+        suite_run_id = new_id()
+        items = []
+        for case in cases:
+            item_id = new_id()
+            item = UiTestSuiteRunItem(
+                item_id=item_id,
+                suite_run_id=suite_run_id,
+                case_id=case.case_id,
+                order_no=case.order_no,
+                continue_on_failure=False,
+                status="pending",
+                snapshot_json={
+                    "itemId": item_id,
+                    "caseId": case.case_id,
+                    "case": ui_case_payload(case),
+                    "orderNo": case.order_no,
+                    "continueOnFailure": False,
+                    "status": "pending",
+                },
+            )
+            items.append(item)
         run = UiTestSuiteRun(
-            suite_run_id=new_id(),
+            suite_run_id=suite_run_id,
             suite_id=suite_id,
             requirement_id=context.requirement.requirement_id,
             sprint_id=context.sprint.sprint_id,
@@ -156,8 +193,10 @@ class UiTestCaseRunService:
             trigger_type="manual",
             status="pending",
             total_count=len(cases),
-            snapshot_json={},
-            summary_json={},
+            snapshot_json={
+                "suiteRunId": suite_run_id,
+                "suite": ui_suite_payload(context.suite),
+            },
         )
         task = WorkerTask(
             domain="ui",
@@ -169,16 +208,8 @@ class UiTestCaseRunService:
         )
         self.repository.add_all([run, task])
         await self.repository.flush()
-        for case in cases:
-            self.repository.add(
-                UiTestSuiteRunItem(
-                    item_id=new_id(),
-                    suite_run_id=run.suite_run_id,
-                    case_id=case.case_id,
-                    order_no=case.order_no,
-                    status="pending",
-                )
-            )
+        for item in items:
+            self.repository.add(item)
         await self.repository.commit()
         await self.repository.refresh(run)
         return dump_suite_run(run)
@@ -206,8 +237,14 @@ class UiTestCaseRunService:
             {
                 "itemId": item.item_id,
                 "caseId": item.case_id,
+                "caseName": suite_run_item_case_name(item),
                 "status": item.status,
                 "orderNo": item.order_no,
+                "stepResults": item.step_results_json or [],
+                "errorMessage": item.error_message,
+                "durationMs": item.duration_ms,
+                "startedAt": item.started_at,
+                "finishedAt": item.finished_at,
             }
             for item in items
         ]

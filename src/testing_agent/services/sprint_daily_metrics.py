@@ -271,9 +271,20 @@ class SprintDailyMetricsService:
         return build_run_metrics(case_ids, statuses)
 
     async def load_ui_metrics_from_local_runs(self, sprint_id: str) -> TestMetrics:
-        case_ids = await self.repository.list_ui_case_ids_by_sprint(sprint_id)
-        statuses = await self.repository.list_latest_ui_run_statuses(sprint_id)
-        return build_run_metrics(case_ids, statuses)
+        runs = await self.repository.list_latest_ui_suite_runs(sprint_id)
+        metrics = TestMetrics()
+        for run in runs:
+            metrics.total += int_or_zero(run.total_count)
+            metrics.success += int_or_zero(run.success_count)
+            metrics.failed += int_or_zero(run.failed_count) + int_or_zero(run.error_count)
+            metrics.executed += (
+                int_or_zero(run.success_count)
+                + int_or_zero(run.failed_count)
+                + int_or_zero(run.error_count)
+                + int_or_zero(run.skipped_count)
+            )
+        metrics.pending = max(metrics.total - metrics.executed, 0)
+        return metrics
 
     async def load_bug_metrics_from_execution(self, user_id: str, sprint_id: str) -> BugMetrics:
         access = await self.resolve_execution_binding_access(user_id, sprint_id)

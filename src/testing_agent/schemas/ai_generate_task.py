@@ -161,6 +161,8 @@ class AiGenerateTaskResponse(BaseModel):
     source_content: str = Field(alias="sourceContent")
     source_archive: SourceArchiveResponse | None = Field(default=None, alias="sourceArchive")
     instruction: str = ""
+    created_at: datetime | str | None = Field(default="", alias="createdAt")
+    updated_at: datetime | str | None = Field(default="", alias="updatedAt")
 
     model_config = ConfigDict(populate_by_name=True)
 

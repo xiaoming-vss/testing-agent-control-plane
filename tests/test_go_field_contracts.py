@@ -162,8 +162,6 @@ def test_ui_run_response_uses_snapshot_and_step_results_fields():
         status="success",
         success=True,
         errorMessage="",
-        currentUrl="https://example.test",
-        tracePath="trace.zip",
         durationMs=12,
         snapshot={"runId": "run1"},
         stepResults=[{"status": "success"}],
@@ -177,6 +175,8 @@ def test_ui_run_response_uses_snapshot_and_step_results_fields():
     assert "stepResults" in payload
     assert "snapshotJson" not in payload
     assert "stepResultsJson" not in payload
+    assert "currentUrl" not in payload
+    assert "tracePath" not in payload
 
 
 def test_ui_suite_screenshot_policy_uses_go_field():

@@ -952,7 +952,7 @@ def test_internal_ui_worker_started_returns_204_like_go_contract():
 
 
 @pytest.mark.asyncio
-async def test_ui_case_payload_serializes_steps_json_for_worker():
+async def test_ui_case_payload_keeps_steps_json_array_for_worker():
     class FakeSession:
         async def scalar(self, statement):
             return SimpleNamespace(
@@ -966,7 +966,7 @@ async def test_ui_case_payload_serializes_steps_json_for_worker():
 
     payload = await worker_service_module.ui_case_payload(FakeSession(), "case-1")
 
-    assert payload["stepsJson"] == '[{"keyword":"goto","url":"https://example.test"}]'
+    assert payload["stepsJson"] == [{"keyword": "goto", "url": "https://example.test"}]
 
 
 def test_ui_suite_payload_includes_screenshot_policy_for_worker():

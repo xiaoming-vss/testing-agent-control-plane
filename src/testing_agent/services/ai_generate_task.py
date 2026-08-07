@@ -15,6 +15,7 @@ import yaml
 from fastapi.encoders import jsonable_encoder
 
 from testing_agent.core.errors import (
+    AppError,
     ErrApiCaseGenerateTaskRunReviewed,
     ErrBadRequest,
     ErrForbidden,
@@ -49,6 +50,7 @@ from testing_agent.services.common import list_payload
 from testing_agent.services.requirement import dump_requirement
 from testing_agent.services.sprint_daily_metrics import SprintDailyMetricsService
 from testing_agent.services.test_report_pdf import markdown_to_pdf_bytes
+from testing_agent.services.ui_test_case import ui_import_cases
 
 
 def task_type_for(kind: str) -> str:
@@ -175,6 +177,8 @@ def dump_task(
         "sourceContent": task.source_content,
         "sourceArchive": dump_source_archive(source_archive),
         "instruction": task.instruction,
+        "createdAt": task.created_at,
+        "updatedAt": task.updated_at,
     }
 
 
@@ -294,6 +298,13 @@ async def build_generate_run_snapshot(
             source_content = requirement_source_content(requirement)
             if not source_content and document_type == "docx":
                 source_content = document_download_url
+    elif kind == "ui":
+        requirement = await repository.get_requirement(task.requirement_id)
+        if requirement is not None:
+            # Requirement analysis imports its enhanced text into document_content.
+            # UI generation consumes only that text; it must not fall back to the
+            # original requirement document or expose a document download URL.
+            source_content = str(getattr(requirement, "document_content", "") or "")
     snapshot = {
         "taskId": task.task_id,
         "runId": run_id,
@@ -312,7 +323,6 @@ async def build_generate_run_snapshot(
         snapshot["sourceType"] = task.source_type
     if kind == "ui" and worker_task_id:
         snapshot["sourceArchiveDownloadUrl"] = worker_source_archive_download_url(worker_task_id)
-        snapshot["documentDownloadUrl"] = worker_requirement_document_download_url(worker_task_id)
     return snapshot
 
 
@@ -495,8 +505,11 @@ def requirement_analysis_import_content(run: ApiCaseGenerateTaskRun | Any) -> st
 
 def validate_ui_candidate_cases(result_yaml: str) -> list[dict[str, Any]]:
     payload = generated_payload(SimpleNamespace(result_yaml=result_yaml))
-    cases = payload.get("cases")
-    if not isinstance(cases, list) or not cases:
+    try:
+        cases = ui_import_cases(payload)
+    except AppError as exc:
+        raise ErrBadRequest from exc
+    if not cases:
         raise ErrBadRequest
     for case in cases:
         if (

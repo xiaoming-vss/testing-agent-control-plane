@@ -22,7 +22,6 @@ from testing_agent.models.integration_connection import IntegrationConnection
 from testing_agent.models.project_skill_space import ProjectSkillSpace
 from testing_agent.models.ui_test_case import UiTestCase
 from testing_agent.models.ui_test_case_run import UiTestCaseRun
-from testing_agent.models.ui_test_suite import UiTestSuite
 from testing_agent.models.ui_test_suite_run import UiTestSuiteRun, UiTestSuiteRunItem
 from testing_agent.models.worker_task import WorkerTask
 from testing_agent.schemas.workers import (
@@ -32,6 +31,12 @@ from testing_agent.schemas.workers import (
 from testing_agent.services.api_request_render import (
     api_case_request_template,
     render_api_case_request,
+)
+from testing_agent.services.ui_execution_payload import (
+    ui_case_payload as ui_case_model_payload,
+)
+from testing_agent.services.ui_execution_payload import (
+    ui_suite_payload as ui_suite_model_payload,
 )
 
 LEASE_SECONDS = 30
@@ -511,74 +516,40 @@ async def build_snapshot(session: AsyncSession, domain: str, task: WorkerTask) -
         run = await session.scalar(
             select(UiTestSuiteRun).where(UiTestSuiteRun.suite_run_id == task.run_id)
         )
-        suite = await session.scalar(
-            select(UiTestSuite).where(UiTestSuite.suite_id == task.suite_id)
-        )
-        items = (
-            await session.scalars(
-                select(UiTestSuiteRunItem)
-                .where(UiTestSuiteRunItem.suite_run_id == task.run_id)
-                .order_by(UiTestSuiteRunItem.order_no)
-            )
-        ).all()
-        payload["suiteRun"] = {
-            "suiteRunId": task.run_id,
-            "suite": ui_suite_payload(suite),
-            "snapshot": run.snapshot_json if run else {},
-            "items": [
-                {
+        suite_run = dict(run.snapshot_json or {}) if run else {}
+        if run:
+            items = (
+                await session.scalars(
+                    select(UiTestSuiteRunItem)
+                    .where(UiTestSuiteRunItem.suite_run_id == task.run_id)
+                    .order_by(UiTestSuiteRunItem.order_no)
+                )
+            ).all()
+            suite_run["items"] = [
+                dict(item.snapshot_json or {})
+                or {
                     "itemId": item.item_id,
                     "caseId": item.case_id,
-                    "case": await ui_case_payload(session, item.case_id),
                     "orderNo": item.order_no,
                     "continueOnFailure": item.continue_on_failure,
                     "status": item.status,
                 }
                 for item in items
-            ],
-        }
+            ]
+        payload["suiteRun"] = suite_run
     elif domain == "ui":
         run = await session.scalar(select(UiTestCaseRun).where(UiTestCaseRun.run_id == task.run_id))
-        payload["caseRun"] = {
-            "runId": task.run_id,
-            "snapshot": run.snapshot_json if run else {},
-            "suite": ui_suite_payload(
-                await session.scalar(
-                    select(UiTestSuite).where(UiTestSuite.suite_id == task.suite_id)
-                )
-            ),
-            "case": await ui_case_payload(session, task.case_id),
-        }
+        payload["caseRun"] = dict(run.snapshot_json or {}) if run else {}
     return payload
 
 
-def ui_suite_payload(suite: UiTestSuite | Any | None) -> dict[str, Any]:
-    if suite is None:
-        return {}
-    return {
-        "suiteId": suite.suite_id,
-        "name": suite.name,
-        "headless": suite.headless,
-        "slowMoMs": suite.slow_mo_ms,
-        "viewportWidth": suite.viewport_width,
-        "viewportHeight": suite.viewport_height,
-        "defaultStepTimeoutMs": suite.default_step_timeout_ms,
-        "screenshotPolicy": getattr(suite, "screenshot_policy", None) or "on_failure",
-    }
+def ui_suite_payload(suite: Any | None) -> dict[str, Any]:
+    return ui_suite_model_payload(suite)
 
 
 async def ui_case_payload(session: AsyncSession, case_id: str) -> dict[str, Any]:
     case = await session.scalar(select(UiTestCase).where(UiTestCase.case_id == case_id))
-    if case is None:
-        return {}
-    return {
-        "caseId": case.case_id,
-        "suiteId": case.suite_id,
-        "name": case.name,
-        "enabled": case.enabled,
-        "orderNo": case.order_no,
-        "stepsJson": json_text(case.steps_json),
-    }
+    return ui_case_model_payload(case)
 
 
 async def update_task_claimed(task: WorkerTask, body: WorkerClaimRequest):
@@ -693,9 +664,6 @@ async def complete_domain_run(
         )
         if run:
             run.status = status
-            run.snapshot_json = body.snapshot_json or run.snapshot_json
-            run.current_url = body.current_url or run.current_url
-            run.trace_path = body.trace_path or run.trace_path
             run.error_message = body.error_message or ""
             run.finished_at = parse_event_time(body.finished_at) or datetime.now(UTC)
             if body.duration_ms is not None:
@@ -704,10 +672,7 @@ async def complete_domain_run(
         run = await session.scalar(select(UiTestCaseRun).where(UiTestCaseRun.run_id == task.run_id))
         if run:
             run.status = status
-            run.snapshot_json = body.snapshot_json or run.snapshot_json
             run.step_results_json = body.step_results or run.step_results_json
-            run.current_url = body.current_url or run.current_url
-            run.trace_path = body.trace_path or run.trace_path
             run.error_message = body.error_message or ""
             run.finished_at = parse_event_time(body.finished_at) or datetime.now(UTC)
             if body.duration_ms is not None:

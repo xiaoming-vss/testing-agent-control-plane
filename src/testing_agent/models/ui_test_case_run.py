@@ -26,8 +26,6 @@ class UiTestCaseRun(Base):
     status: Mapped[str] = mapped_column(String(20), index=True, nullable=False, default="pending")
     snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     step_results_json: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
-    current_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    trace_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

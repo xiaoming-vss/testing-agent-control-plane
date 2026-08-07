@@ -61,8 +61,17 @@ class FakeSprintDailyMetricsRepository:
     async def list_ui_case_ids_by_sprint(self, sprint_id):
         return ["ui-1", "ui-2"]
 
-    async def list_latest_ui_run_statuses(self, sprint_id):
-        return {"ui-1": "canceled", "ui-2": "success"}
+    async def list_latest_ui_suite_runs(self, sprint_id):
+        return [
+            SimpleNamespace(
+                suite_id="suite-1",
+                total_count=2,
+                success_count=1,
+                failed_count=1,
+                error_count=0,
+                skipped_count=0,
+            )
+        ]
 
     async def get_active_binding(self, resource_type, resource_id):
         return self.binding
@@ -281,3 +290,39 @@ async def test_sprint_daily_metrics_without_execution_binding_uses_zero_remote_m
     assert result["api"]["total"] == 3
     assert result["ui"]["total"] == 2
     assert result["bugs"] == []
+
+
+@pytest.mark.asyncio
+async def test_ui_metrics_aggregate_latest_suite_run_counts():
+    repository = FakeSprintDailyMetricsRepository()
+
+    async def list_latest_ui_suite_runs(_sprint_id):
+        return [
+            SimpleNamespace(
+                suite_id="suite-1",
+                total_count=3,
+                success_count=1,
+                failed_count=0,
+                error_count=1,
+                skipped_count=1,
+            ),
+            SimpleNamespace(
+                suite_id="suite-2",
+                total_count=4,
+                success_count=2,
+                failed_count=1,
+                error_count=0,
+                skipped_count=0,
+            ),
+        ]
+
+    repository.list_latest_ui_suite_runs = list_latest_ui_suite_runs
+    service = SprintDailyMetricsService(repository)
+
+    result = await service.load_ui_metrics_from_local_runs("s1")
+
+    assert result.total == 7
+    assert result.executed == 6
+    assert result.pending == 1
+    assert result.success == 3
+    assert result.failed == 2
