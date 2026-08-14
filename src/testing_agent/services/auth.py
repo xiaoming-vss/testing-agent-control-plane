@@ -36,7 +36,7 @@ class AuthService:
         self.users.add(user)
         await self.users.commit()
         await self.users.refresh(user)
-        return {}
+        return self._user_data(user)
 
     async def login(self, body: LoginRequest) -> dict:
         user = await self.users.get_by_name(body.name)
@@ -64,7 +64,7 @@ class AuthService:
             user.email = body.email
         await self.users.commit()
         await self.users.refresh(user)
-        return {}
+        return self._user_data(user)
 
     async def delete_user(self, user_id: str) -> dict:
         user = await self.users.get_by_user_id(user_id)
